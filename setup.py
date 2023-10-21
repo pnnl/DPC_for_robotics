@@ -19,6 +19,13 @@ setup(name='dpc_sf',
           'matplotlib',
           'scipy',
           'numpy',
+          'mediapy',
+          'casadi',
+          'mujoco-python-viewer',
+          'gymnasium',
+          'mujoco-py<2.2,>=2.1',
+          'cython<3',
+          'patchelf',
       ],
       packages=find_packages(
           include=[

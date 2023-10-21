@@ -3,6 +3,7 @@ from matplotlib import animation
 import numpy as np
 import dpc_sf.utils
 from datetime import datetime
+import os 
 
 class Animator:
     def __init__(
@@ -242,6 +243,9 @@ class Animator:
 
         if (self.ifsave):
             current_datetime = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+            print(f"save path: {os.path.abspath(self.save_path)}")
+            if not os.path.exists(self.save_path):
+                os.makedirs(self.save_path)
             line_ani.save(f'{self.save_path}/{current_datetime}.gif', dpi=120, fps=25)
             # Update the figure with the last frame of animation
             self.update_lines(len(self.times[1:])-1)

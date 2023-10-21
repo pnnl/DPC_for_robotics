@@ -19,17 +19,12 @@ def e2e_test_opt(
         plot_prediction=True,
         Ts=0.1,
         Ti=0.0,
-        Tf=15.0,
-        N=30
+        Tf=1.0,
+        N=30,
+        Tf_hzn = 3.0,
     ):
 
     print(f'conducting e2e mj mpc: {test}')
-
-    Ts = 0.01
-    Tf_hzn = 3.0
-    N = 30
-    Ti = 0.0
-    Tf = 15.0
     integrator = "euler"
 
     # Find the optimal dts for the MPC
@@ -139,7 +134,7 @@ def e2e_test(
         plot_prediction=True,
         Ts=0.1,
         Ti=0.0,
-        Tf=15.0,
+        Tf=0.2,
         N=30
     ):
 
