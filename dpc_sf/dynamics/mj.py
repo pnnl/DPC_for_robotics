@@ -1,17 +1,12 @@
-import dpc_sf.utils as utils
-import dpc_sf.utils.pytorch_utils as ptu
 import torch
 import numpy as np
-from dpc_sf.control.trajectory.trajectory import waypoint_reference, equation_reference
 from dpc_sf.utils.animation import Animator
 import numpy as np
-import matplotlib.pyplot as plt
 import mediapy as media
 import os
 import mujoco as mj
 import copy
-from gymnasium import spaces, Env
-import gymnasium as gym
+from gymnasium import spaces
 from dpc_sf.utils.mujoco_utils import mj_get_state, state2qpv
 from datetime import datetime
 

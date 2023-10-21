@@ -14,8 +14,10 @@ class QuadcopterJac:
 
     def linmod(self, state): # VALIDATED
 
-        """This may look ridiculous, but it is imported from a symbolically derived linearisation in the 
-        file jacobian_derivation.py"""
+        """
+        This may look ridiculous, but it is imported from a symbolically derived linearisation in the 
+        file jacobian_derivation.py
+        """
 
         # Import State Vector
         # ---------------------------
