@@ -8,7 +8,6 @@ import mujoco as mj
 import copy
 from gymnasium import spaces
 from dpc_sf.utils.mujoco_utils import mj_get_state, state2qpv
-from datetime import datetime
 
 # for the gym env example
 from typing import Optional

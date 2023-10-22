@@ -11,7 +11,7 @@ class waypoint_reference:
             set_vel_zero = True,
         ) -> None:
         
-        self.include_actuators=include_actuators
+        self.include_actuators = include_actuators
         self.type = type
         self.set_vel_zero = set_vel_zero
 

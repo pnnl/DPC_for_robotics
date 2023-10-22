@@ -59,9 +59,9 @@ class Dynamics(ode.ODESystem):
         # noise definitions
         self.x_std = x_std
 
-    def ode_equations(self, xu):
-        x = xu[:,0:6]
-        u = xu[:,6:9]
+    def ode_equations(self, x, u):
+        # x = xu[:,0:6]
+        # u = xu[:,6:9]
         # add noise if required
         x = x + torch.randn(x.shape) * self.x_std
         return self.f(x,u)

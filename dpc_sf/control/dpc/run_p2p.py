@@ -28,7 +28,7 @@ parser = argparse.ArgumentParser(description="Description of your program")
 
 parser.add_argument("--Ts",                 type=float, default=0.001, help="Your description for Ts")
 parser.add_argument("--save_path",          type=str, default="data/policy/DPC_p2p/", help="Path to save data")
-parser.add_argument("--policy_name",        type=str, default="policy_experimental.pth", help="Name of the policy file")
+parser.add_argument("--policy_name",        type=str, default="policy_experimental_tt.pth", help="Name of the policy file")
 parser.add_argument("--normalize",          type=bool, default=False, help="Whether to normalize or not")
 parser.add_argument("--include_actuators",  type=bool, default=True, help="Whether to include actuators or not")
 parser.add_argument("--backend",            type=str, default='mj', choices=['mj', 'eom'], help="Backend to use, 'mj' or 'eom'")
