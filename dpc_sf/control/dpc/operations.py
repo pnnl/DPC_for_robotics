@@ -80,7 +80,7 @@ class processP2PPolicyInput(torch.nn.Module):
         else:
             return e
 
-class processTrajPolicyInput(torch.nn.Module):
+class processFig8TrajPolicyInput(torch.nn.Module):
     def __init__(self, use_error=True) -> None:
         super().__init__()
         self.use_error = use_error
@@ -92,7 +92,19 @@ class processTrajPolicyInput(torch.nn.Module):
             return torch.hstack([e,p])
         elif self.use_error is False:
             return torch.hstack([x,e,p])
+        
+class processP2PTrajPolicyInput(torch.nn.Module):
+    def __init__(self, use_error=True) -> None:
+        super().__init__()
+        self.use_error = use_error
 
+    def forward(self, x, r):
+        # we want to pass the 
+        e = r - x
+        if self.use_error is True:
+            return e
+        elif self.use_error is False:
+            return torch.hstack([x,e])
 
 class radMultiplier(torch.nn.Module):
     def __init__(self, Ts, bs=1) -> None:

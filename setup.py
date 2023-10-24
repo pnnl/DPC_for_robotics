@@ -25,7 +25,7 @@ setup(name='dpc_sf',
           'gymnasium',
           'mujoco-py<2.2,>=2.1',
           'cython<3',
-          'patchelf',
+          # 'patchelf',
       ],
       packages=find_packages(
           include=[

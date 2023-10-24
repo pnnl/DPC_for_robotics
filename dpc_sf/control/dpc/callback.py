@@ -231,7 +231,67 @@ def plot_wp_p2p_train_old(output, test_trajectory, save_path=None):
     fig.savefig(save_path + f'{current_datetime}.png', dpi=300)  # Change the filename and dpi as needed
     plt.close(fig)  # This closes the figure and releases its resources.
 
-def plot_traj(output, trajectories, save_path):
+
+def plot_p2p_traj(output, trajectories, save_path):
+
+    R = ptu.to_numpy(output['train_R'])
+    X = ptu.to_numpy(output['train_X'])
+
+    x = X[:,:,0]
+    y = X[:,:,2]
+    z = X[:,:,4]
+    xr = R[:,:,0]
+    yr = R[:,:,2]
+    zr = R[:,:,4]
+
+    fig = plt.figure(figsize=(10,5))
+    ax = fig.add_subplot(121, projection='3d')  # 121: 1x2 grid, first subplot, 3D projection
+    
+    num_lines = x.shape[0]
+    cmap = plt.get_cmap('rainbow', num_lines)
+    
+    for i in range(num_lines):
+        ax.plot(x[i, :], y[i, :], z[i, :], color=cmap(i), label=f'Line {i+1}')  # plot x-y-z line
+        ax.plot(xr[i, :], yr[i, :], zr[i, :], color=cmap(i), linestyle='dashed')  # plot xr-yr-zr line with dashed style
+    
+    ax.set_title('3D Line pairs plotted with rainbow cmap')
+    ax.set_xlabel('X-axis')
+    ax.set_ylabel('Y-axis')
+    ax.set_zlabel('Z-axis')
+    
+    # Plot the test trajectories rather than the training data
+    # --------------------------
+
+    R = ptu.to_numpy(trajectories['R'])
+    X = ptu.to_numpy(trajectories['X'])
+
+    x = X[:,:,0]
+    y = X[:,:,2]
+    z = X[:,:,4]
+    xr = R[:,:,0]
+    yr = R[:,:,2]
+    zr = R[:,:,4]
+
+    # Setting up the second subplot (Empty for now)
+    ax2 = fig.add_subplot(122, projection='3d')  # 122: 1x2 grid, second subplot
+    ax2.set_title('Second Subplot')
+
+    for i in range(1):
+        ax2.plot(x[i, :], y[i, :], z[i, :], color='blue', label=f'Line {i+1}')  # plot x-y-z line
+        ax2.plot(xr[i, :], yr[i, :], zr[i, :], color='green', linestyle='dashed')  # plot xr-yr-zr line with dashed style
+    
+    ax2.set_title('3D Line pairs plotted with rainbow cmap')
+    ax2.set_xlabel('X-axis')
+    ax2.set_ylabel('Y-axis')
+    ax2.set_zlabel('Z-axis')
+
+    # Save the figure
+    current_datetime = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+
+    fig.savefig(save_path + f'{current_datetime}.png', dpi=300)  # Change the filename and dpi as needed
+    plt.close(fig)  # This closes the figure and releases its resources.
+
+def plot_fig8_traj(output, trajectories, save_path):
 
     R = ptu.to_numpy(output['train_R'])
     X = ptu.to_numpy(output['train_X'])
@@ -423,7 +483,7 @@ class SinTrajCallback(Callback):
 
         trajectories = trainer.model.nodes[0](data)
 
-        plot_traj(output, trajectories, save_path=self.directory)
+        plot_fig8_traj(output, trajectories, save_path=self.directory)
         plt.close()
 
     def animate(self):
@@ -491,7 +551,7 @@ class LinTrajCallback(Callback):
 
         trajectories = trainer.model.nodes[0](data)
 
-        plot_traj(trajectories, save_path=self.directory)
+        plot_p2p_traj(output, trajectories, save_path=self.directory)
         plt.close()
 
     def animate(self):

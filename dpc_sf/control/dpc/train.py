@@ -20,7 +20,7 @@ from dpc_sf.control.dpc.generate_dataset import DatasetGenerator
 
 # call the argparser to get parameters for run
 from dpc_sf.control.dpc.train_params import args_dict as args
-from dpc_sf.control.dpc.operations import posVel2cyl, Dynamics, processP2PPolicyInput, processTrajPolicyInput, radMultiplier, BimodalPolicy
+from dpc_sf.control.dpc.operations import posVel2cyl, Dynamics, processP2PPolicyInput, processFig8TrajPolicyInput, processP2PTrajPolicyInput, radMultiplier, BimodalPolicy
 
 # torch.autograd.set_detect_anomaly(True)
 torch.manual_seed(0)
@@ -72,11 +72,11 @@ if args["task"] == 'wp_p2p':
     process_policy_input_node = Node(process_policy_input, ['X', 'R', 'Cyl'], ['Obs'], name='preprocess')
     policy_insize = nx + nc
 elif args["task"] == 'fig8':
-    process_policy_input = processTrajPolicyInput(use_error=args["fig8_observe_error"])
+    process_policy_input = processFig8TrajPolicyInput(use_error=args["fig8_observe_error"])
     process_policy_input_node = Node(process_policy_input, ['X', 'R', 'P'], ['Obs'], name='preprocess')
     policy_insize = nx + nr * (not args["fig8_observe_error"]) + 4 # state, reference, equation parameters
 elif args["task"] == 'wp_traj':
-    process_policy_input = processTrajPolicyInput()
+    process_policy_input = processP2PTrajPolicyInput(use_error=True)
     process_policy_input_node = Node(process_policy_input, ['X', 'R'], ['Obs'], name='preprocess')
     policy_insize = nx
 node_list.append(process_policy_input_node)
@@ -93,14 +93,15 @@ else:
 policy_node = Node(policy, ['Obs'], ['U'], name='policy')
 node_list.append(policy_node)
 
-interp_u = lambda tq, t, u: u
 dynamics = Dynamics(insize=9, outsize=6, x_std=args["x_noise_std"])
-integrator = integrators.Euler(dynamics, interp_u=interp_u, h=torch.tensor(args["Ts"]))
+integrator = integrators.Euler(dynamics, h=torch.tensor(args["Ts"]))
 dynamics_node = Node(integrator, ['X', 'U'], ['X'], name='dynamics')
 node_list.append(dynamics_node)
 
 print(f'node list used in cl_system: {node_list}')
 cl_system = System(node_list)
+
+print(args['batch_size'])
 
 # Dataset Generation Class
 # ------------------------

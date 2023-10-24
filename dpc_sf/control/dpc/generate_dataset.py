@@ -380,8 +380,12 @@ class DatasetGenerator:
         print(f"generating dataset of batchsize: {self.batch_size}")
         while len(X) < self.batch_size:
             x_sample = self.x_range * torch.randn(1, 1, self.nx)
+            x_sample[:,:,0] *= 2.5
+            # x_sample[:,:,0] += 2
 
             pos_sample, vel_sample = self.generate_reference(mode='linear')
+            pos_sample *= 2.5
+            pos_sample -= 2
 
             # Rearrange to the desired order {x, xdot, y, ydot, z, zdot}
             r_sample = torch.zeros(1, self.nstep+1, self.nx)
