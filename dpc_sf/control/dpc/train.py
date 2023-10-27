@@ -20,11 +20,13 @@ from dpc_sf.control.dpc.generate_dataset import DatasetGenerator
 
 # call the argparser to get parameters for run
 from dpc_sf.control.dpc.train_params import args_dict as args
-from dpc_sf.control.dpc.operations import posVel2cyl, Dynamics, processP2PPolicyInput, processFig8TrajPolicyInput, processP2PTrajPolicyInput, radMultiplier, BimodalPolicy, SeqGenTransformer
+from dpc_sf.control.dpc.operations import Dynamics, processP2PPolicyInput, processFig8TrajPolicyInput, processP2PTrajPolicyInput, radMultiplier, SeqGenTransformer
 
 # torch.autograd.set_detect_anomaly(True)
 torch.manual_seed(0)
 np.random.seed(0)
+
+ptu.init_gpu(use_gpu=True)
 
 # save hyperparameters used
 # -------------------------
@@ -98,7 +100,7 @@ else:
         linear_map=torch.nn.Linear,
         nonlin=torch.nn.ReLU,
         hsizes=[20, 20, 20, 20]
-    )
+    ).to(ptu.device)
 policy_node = Node(policy, ['Obs'], ['U'], name='policy')
 node_list.append(policy_node)
 
@@ -108,6 +110,7 @@ dynamics_node = Node(integrator, ['X', 'U'], ['X'], name='dynamics')
 node_list.append(dynamics_node)
 
 print(f'node list used in cl_system: {node_list}')
+# node_list = [node.callable.to(ptu.device) for node in node_list]
 cl_system = System(node_list)
 
 print(args['batch_size'])
@@ -128,7 +131,8 @@ dataset = DatasetGenerator(
     nx                      = nx,
     validate_data           = args["validate_data"],
     shuffle_dataloaders     = args["shuffle_dataloaders"],
-    average_velocity        = args["fig8_average_velocity"]
+    average_velocity        = args["fig8_average_velocity"],
+    device                  = ptu.device
 )
 
 
@@ -161,7 +165,7 @@ if args["use_terminal_state_penalty"] is True:
 # Define Loss:
 objectives = []
 
-action_loss = args["R"] * (u == 0.)^2  # control penalty
+action_loss = args["R"] * (u == ptu.tensor(0.))^2  # control penalty
 action_loss.name = 'action_loss'
 objectives.append(action_loss)
 
@@ -235,7 +239,8 @@ if args["train"] is True:
             test_metric="test_loss",
             eval_metric='dev_loss',
             warmup=400,
-            lr_scheduler=False
+            lr_scheduler=False,
+            device=ptu.device
         )
 
         # Train Over Nsteps

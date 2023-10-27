@@ -35,12 +35,12 @@ parser.add_argument("--backend",            type=str, default='mj', choices=['mj
 parser.add_argument("--nstep",              type=int, default=10000, help="Number of steps")
 parser.add_argument("--radius",             type=float, default=0.5, help="Radius")
 parser.add_argument("--num_trajectories",   type=int, default=9)
-parser.add_argument("--generate_new_data",  type=bool, default=False)
+parser.add_argument("--generate_new_data",  type=bool, default=True)
 parser.add_argument("--x_min",              type=float, default=-1.)
 parser.add_argument("--x_max",              type=float, default=1.)
 parser.add_argument("--y_min",              type=float, default=-1.)
 parser.add_argument("--y_max",              type=float, default=1.)
-parser.add_argument("--animate_traj_idx",  type=int, default=4)
+parser.add_argument("--animate_traj_idx",   type=int, default=4)
 
 
 args = parser.parse_args()

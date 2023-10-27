@@ -40,6 +40,7 @@ class DatasetGenerator:
             Ts=0.1,
             shuffle_dataloaders = False,
             average_velocity = 0.5,
+            device=torch.device('cpu')
         ) -> None:
 
         self.p2p_dataset = p2p_dataset
@@ -57,6 +58,7 @@ class DatasetGenerator:
         self.Ts = Ts
         self.shuffle_dataloaders = shuffle_dataloaders
         self.average_velocity=average_velocity
+        self.device=device
 
     # Obstacle Avoidance Methods:
     # ---------------------------
@@ -503,7 +505,11 @@ class DatasetGenerator:
 
         if self.validate_data is True and (self.task == 'wp_p2p'):
             self.validate_dataset(train_data.datadict)
-            self.validate_dataset(dev_data.datadict)
+            self.validate_dataset(dev_data.datadict)        
+
+        # put datasets on correct device
+        train_data.datadict = {key: value.to(ptu.device) for key, value in train_data.datadict.items()}
+        dev_data.datadict = {key: value.to(ptu.device) for key, value in dev_data.datadict.items()}
 
         train_loader = torch.utils.data.DataLoader(train_data, batch_size=self.minibatch_size,
                                                 collate_fn=train_data.collate_fn, shuffle=self.shuffle_dataloaders)

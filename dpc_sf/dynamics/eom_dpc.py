@@ -74,7 +74,7 @@ class QuadcopterDPC(torch.nn.Module):
                 integrator='euler',
                 xml_path="quadrotor_x.xml",
                 write_path="media/mujoco/",
-                render='mujoco' # render='online_mujoco'
+                render='matplotlib' # render='online_mujoco'
             )
             self.forward = self.mj_forward
         else:

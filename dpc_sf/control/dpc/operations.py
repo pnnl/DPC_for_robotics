@@ -4,7 +4,7 @@ import torch.nn as nn
 from neuromancer.dynamics import ode
 from neuromancer.modules import blocks
 
-
+from dpc_sf.utils import pytorch_utils as ptu
 
 # Functions:
 def posVel2cyl(state, cyl, radius):
@@ -38,7 +38,7 @@ class Dynamics(ode.ODESystem):
     def __init__(self, insize, outsize, x_std=0.0) -> None:
         super().__init__(insize=insize, outsize=outsize)
 
-        A = torch.tensor([
+        A = ptu.tensor([
             [0.0, 1.0, 0.0, 0.0, 0.0, 0.0],
             [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
             [0.0, 0.0, 0.0, 1.0, 0.0, 0.0],
@@ -47,7 +47,7 @@ class Dynamics(ode.ODESystem):
             [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
         ])
 
-        B = torch.tensor([
+        B = ptu.tensor([
             [0.0, 0.0, 0.0],
             [1.0, 0.0, 0.0],
             [0.0, 0.0, 0.0],
@@ -67,7 +67,7 @@ class Dynamics(ode.ODESystem):
         # x = xu[:,0:6]
         # u = xu[:,6:9]
         # add noise if required
-        x = x + torch.randn(x.shape) * self.x_std
+        x = x + torch.randn(x.shape, device=ptu.device) * self.x_std
         return self.f(x,u)
 
 class processP2PPolicyInput(torch.nn.Module):
@@ -123,9 +123,10 @@ class radMultiplier(torch.nn.Module):
         return i, m
     
 
-class SeqGenTransformer(nn.Module):
+class SeqGenTransformer(blocks.Block):
     def __init__(self, input_dim, d_model, nhead, num_layers, dim_feedforward, output_dim, hzn=100):
-        super(SeqGenTransformer, self).__init__()
+        super().__init__()
+
         self.hzn = hzn
         self.embedding = nn.Linear(input_dim, d_model)
         self.positional_encoding = nn.Embedding(self.hzn + 1, d_model)  # Assuming a max sequence length of 1000 for simplicity
@@ -150,7 +151,7 @@ class SeqGenTransformer(nn.Module):
             self.reset_sequence()
         tensor.register_hook(hook)
 
-    def forward(self, x):
+    def block_eval(self, x):
         # x: [batch_size, input_dim]
         x = x.unsqueeze(1)  # Make it [batch_size, 1, input_dim]
         

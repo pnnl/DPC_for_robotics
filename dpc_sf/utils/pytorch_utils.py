@@ -26,7 +26,7 @@ def from_numpy(*args, **kwargs):
 def to_numpy(tensor):
     return tensor.to('cpu').detach().numpy()
 
-def create_tensor(list):
+def tensor(list):
     return torch.tensor(list).type(dtype).to(device)
 
 def create_zeros(shape):

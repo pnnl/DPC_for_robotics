@@ -613,6 +613,8 @@ class WP_Callback(Callback):
             'M': M
         }
 
+        data = {key: value.to(ptu.device) for key, value in data.items()}
+
         test_trajectory = trainer.model.nodes[0](data)
 
         # plot_wp_p2p(trajectories, save_path=self.directory)]        
