@@ -20,7 +20,7 @@ from dpc_sf.utils.normalisation import normalize_rl, denormalize_rl
 
 class QuadrotorXHoverEnv(UAVBaseEnv):
     """
-    Quadrotor with plus(+) configuration.
+    Quadrotor with x configuration.
     Environment designed to make the UAV hover at the desired position.
 
     * Environment Name: QuadrotorPlusHoverEnv-v0

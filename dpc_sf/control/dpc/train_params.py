@@ -38,7 +38,7 @@ parser.add_argument('--barrier_type',               type=str,   default='softexp
 parser.add_argument('--barrier_alpha',              type=float, default=0.05,                     help='Terminal constraint initial radius')
 parser.add_argument('--use_cyl_constraint',         type=bool,  default=True,                    help='Terminal constraint initial radius')
 parser.add_argument('--validate_data',              type=bool,  default=False,                    help='Terminal constraint initial radius')
-parser.add_argument('--task',                       type=str,   default='wp_traj',                    help='Terminal constraint initial radius')
+parser.add_argument('--task',                       type=str,   default='wp_p2p',                    help='Terminal constraint initial radius')
 parser.add_argument('--Qpos',                       type=float, default=5.00,                    help='Terminal constraint initial radius')
 parser.add_argument('--Qvel',                       type=float, default=5.00,                    help='Terminal constraint initial radius')
 parser.add_argument('--Qtermscale',                 type=float, default=30.00,                    help='Terminal constraint initial radius')
@@ -49,7 +49,7 @@ parser.add_argument('--p2p_dataset',                type=str,  default='cylinder
 parser.add_argument('--shuffle_dataloaders',        type=bool,  default=False,                    help='Terminal constraint initial radius')
 parser.add_argument('--fig8_dataset',               type=str,  default='uniform_random',                    help='Terminal constraint initial radius')
 parser.add_argument('--fig8_average_velocity',      type=float,  default=0.25,                    help='Terminal constraint initial radius')
-parser.add_argument('--p2p_bimodal_policy',         type=bool,  default=False,                    help='Terminal constraint initial radius')
+parser.add_argument('--p2p_bimodal_policy',         type=bool,  default=True,                    help='Terminal constraint initial radius')
 
 
 # Parse the arguments

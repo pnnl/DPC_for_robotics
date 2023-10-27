@@ -14,9 +14,10 @@ SEED = 123
 ENV_NAME = "QuadrotorXHoverEnv-v0"
 TOTAL_TIMESTEPS = 5_000_000         # 10_000_000 for ppo, 1_000_000 for SAC
 MODEL_TYPE = 'SAC'                  # 'PPO', 'SAC'
-BACKEND = 'eom'                      # 'mj', 'eom'
+BACKEND = 'mj'                      # 'mj', 'eom'
 MJ_RENDER = True
 TRAIN_TYPE = 'small_box'
+MANUAL_NORM_OBS = False
 
 # initial conditions
 state = params["default_init_state_np"]
@@ -29,13 +30,13 @@ elif TRAIN_TYPE == 'large_box':
 
 register(
     id='QuadrotorXHoverEnv-v0',
-    entry_point='dpc_sf.gym_environments.quadcopter_x_hover5_norm_obs:QuadrotorXHoverEnv',
+    entry_point='dpc_sf.control.rl.gym_environments.quadcopter_x_hover5_norm_obs:QuadrotorXHoverEnv',
     kwargs=dict(env_bounding_box=env_bounding_box, randomize_reset=True, state=state, reference=reference, backend=BACKEND),
 )
 
 vec_env = make_vec_env(ENV_NAME, n_envs=8, seed=SEED)
 # CHANGE NORM OBS TO TRUE FOR NON MANUALLY NORMALISED ENV!!!!
-vec_env = VecNormalize(vec_env, norm_obs=False, norm_reward=True)
+vec_env = VecNormalize(vec_env, norm_obs=MANUAL_NORM_OBS, norm_reward=True)
 
 if BACKEND == 'mj' and MJ_RENDER == True:
     vec_env.envs[0].quad.start_online_render()
@@ -93,3 +94,4 @@ model.save(f"./policy/{MODEL_TYPE}_{BACKEND}_{ENV_NAME}/{TRAIN_TYPE}/model")
 # vec_env.close()
 # 
 # from stable_baselines3.common.evaluation import evaluate_policy
+

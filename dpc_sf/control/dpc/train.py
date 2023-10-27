@@ -20,7 +20,7 @@ from dpc_sf.control.dpc.generate_dataset import DatasetGenerator
 
 # call the argparser to get parameters for run
 from dpc_sf.control.dpc.train_params import args_dict as args
-from dpc_sf.control.dpc.operations import posVel2cyl, Dynamics, processP2PPolicyInput, processFig8TrajPolicyInput, processP2PTrajPolicyInput, radMultiplier, BimodalPolicy
+from dpc_sf.control.dpc.operations import posVel2cyl, Dynamics, processP2PPolicyInput, processFig8TrajPolicyInput, processP2PTrajPolicyInput, radMultiplier, BimodalPolicy, SeqGenTransformer
 
 # torch.autograd.set_detect_anomaly(True)
 torch.manual_seed(0)
@@ -82,7 +82,16 @@ elif args["task"] == 'wp_traj':
 node_list.append(process_policy_input_node)
 
 if (args["p2p_bimodal_policy"] is True) and (args["task"] == 'wp_p2p'):
-    policy = BimodalPolicy()
+    # Parameters
+    input_dim = 8
+    d_model = 20  # model's main dimensionality
+    nhead = 2  # number of heads in multi-head attention
+    num_layers = 1  # number of transformer layers
+    dim_feedforward = 40  # inner layer dimension in the feed-forward network
+    output_dim = 3
+
+    policy = SeqGenTransformer(input_dim, d_model, nhead, num_layers, dim_feedforward, output_dim)
+
 else:
     policy = blocks.MLP(
         insize=policy_insize, outsize=nu, bias=True,

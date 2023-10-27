@@ -1,6 +1,10 @@
 import torch
+import torch.nn as nn
+
 from neuromancer.dynamics import ode
 from neuromancer.modules import blocks
+
+
 
 # Functions:
 def posVel2cyl(state, cyl, radius):
@@ -118,6 +122,70 @@ class radMultiplier(torch.nn.Module):
         i = i + 1
         return i, m
     
+
+class SeqGenTransformer(nn.Module):
+    def __init__(self, input_dim, d_model, nhead, num_layers, dim_feedforward, output_dim, hzn=100):
+        super(SeqGenTransformer, self).__init__()
+        self.hzn = hzn
+        self.embedding = nn.Linear(input_dim, d_model)
+        self.positional_encoding = nn.Embedding(self.hzn + 1, d_model)  # Assuming a max sequence length of 1000 for simplicity
+        
+        self.transformer = nn.Transformer(
+            d_model=d_model,
+            nhead=nhead,
+            num_encoder_layers=num_layers,
+            num_decoder_layers=0,  # No decoder for this simple setup
+            dim_feedforward=dim_feedforward,
+            batch_first=True  # Batch dimension first for simplicity
+        )
+        
+        self.output = nn.Linear(d_model, output_dim)
+        self.sequence = None  # Store the sequence internally
+
+    def reset_sequence(self):
+        self.sequence = None
+
+    def register_backward_hook(self, tensor):
+        def hook(grad):
+            self.reset_sequence()
+        tensor.register_hook(hook)
+
+    def forward(self, x):
+        # x: [batch_size, input_dim]
+        x = x.unsqueeze(1)  # Make it [batch_size, 1, input_dim]
+        
+        # If the sequence doesn't exist (first input), initialize it
+        if self.sequence is None:
+            self.sequence = x
+        elif self.sequence.shape[1] <= self.hzn:
+            # Append x to the sequence
+            self.sequence = torch.cat((self.sequence, x), dim=1)
+        elif self.sequence.shape[1] > self.hzn:
+            self.sequence = torch.cat((self.sequence, x), dim=1)[:,1:,:]
+            print('segmenting sequence')
+        # self.sequence = x
+
+        batch_size, seq_length, _ = self.sequence.size()
+        
+        # Embedding
+        embedded = self.embedding(self.sequence)
+        
+        # Add positional encodings
+        positions = torch.arange(0, seq_length).expand(batch_size, seq_length).to(self.sequence.device)
+        embedded += self.positional_encoding(positions)
+        
+        # Pass through transformer; since we don't have a decoder, we only use the encoder
+        memory = self.transformer.encoder(embedded)
+        
+        # For simplicity, take the output of the transformer for the last position (most recent input) as our output
+        output = self.output(memory[:, -1, :])
+
+        self.register_backward_hook(output)
+
+        return output
+
+
+
 
 class BimodalPolicy(torch.nn.Module):
     def __init__(self,

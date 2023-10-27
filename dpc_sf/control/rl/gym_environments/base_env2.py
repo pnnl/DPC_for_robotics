@@ -56,7 +56,7 @@ from dpc_sf.dynamics.params import params
 from dpc_sf.utils.mixer import mixerFM_np
 from dpc_sf.dynamics.eom_pt import QuadcopterPT
 from dpc_sf.dynamics.mj import QuadcopterMJ
-from dpc_sf.gym_environments import multirotor_utils
+from dpc_sf.control.rl.gym_environments import multirotor_utils
 
 
 class UAVBaseEnv(Env, gym_utils.EzPickle, ABC):
