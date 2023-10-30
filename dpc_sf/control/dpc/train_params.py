@@ -49,7 +49,8 @@ parser.add_argument('--p2p_dataset',                type=str,  default='cylinder
 parser.add_argument('--shuffle_dataloaders',        type=bool,  default=False,                    help='Terminal constraint initial radius')
 parser.add_argument('--fig8_dataset',               type=str,  default='uniform_random',                    help='Terminal constraint initial radius')
 parser.add_argument('--fig8_average_velocity',      type=float,  default=0.25,                    help='Terminal constraint initial radius')
-parser.add_argument('--p2p_bimodal_policy',         type=bool,  default=False,                    help='Terminal constraint initial radius')
+parser.add_argument('--policy_type',                type=str,  default='mem_seq_transformer',   choices=['mlp','state_seq_transformer', 'mem_seq_transformer']  ,               help='Terminal constraint initial radius')
+parser.add_argument('--past_hzn',                   type=int,  default=10,               help='Terminal constraint initial radius')
 
 
 # Parse the arguments

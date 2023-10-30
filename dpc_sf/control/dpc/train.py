@@ -20,13 +20,13 @@ from dpc_sf.control.dpc.generate_dataset import DatasetGenerator
 
 # call the argparser to get parameters for run
 from dpc_sf.control.dpc.train_params import args_dict as args
-from dpc_sf.control.dpc.operations import Dynamics, processP2PPolicyInput, processFig8TrajPolicyInput, processP2PTrajPolicyInput, radMultiplier, SeqGenTransformer
+from dpc_sf.control.dpc.operations import Dynamics, processP2PPolicyInput, processFig8TrajPolicyInput, processP2PTrajPolicyInput, radMultiplier, StateSeqTransformer, MemSeqTransformer, processP2PMemSeqPolicyInput
 
 # torch.autograd.set_detect_anomaly(True)
 torch.manual_seed(0)
 np.random.seed(0)
 
-ptu.init_gpu(use_gpu=True)
+ptu.init_gpu(use_gpu=False)
 
 # save hyperparameters used
 # -------------------------
@@ -69,7 +69,11 @@ if args["use_rad_multiplier"] is True:
     rad_multiplier_node = Node(rad_multiplier, ['Idx'], ['Idx', 'M'], name='rad_multiplier')
     node_list.append(rad_multiplier_node)
 
-if args["task"] == 'wp_p2p':
+if args["task"] == 'wp_p2p' and args["policy_type"] == "mem_seq_transformer":
+    process_policy_input = processP2PMemSeqPolicyInput(radius=args["radius"])
+    process_policy_input_node = Node(process_policy_input, ['X', 'R', 'Cyl'], ['Obs'], name='preprocess')
+    
+elif args["task"] == 'wp_p2p':
     process_policy_input = processP2PPolicyInput(radius=args["radius"])
     process_policy_input_node = Node(process_policy_input, ['X', 'R', 'Cyl'], ['Obs'], name='preprocess')
     policy_insize = nx + nc
@@ -83,24 +87,49 @@ elif args["task"] == 'wp_traj':
     policy_insize = nx
 node_list.append(process_policy_input_node)
 
-if (args["p2p_bimodal_policy"] is True) and (args["task"] == 'wp_p2p'):
+if (args["policy_type"] == 'state_seq_transformer') and (args["task"] == 'wp_p2p'):
     # Parameters
-    input_dim = 8
+    input_dim = 8   # observations
+    output_dim = 3  # actions
     d_model = 20  # model's main dimensionality
     nhead = 2  # number of heads in multi-head attention
     num_layers = 1  # number of transformer layers
     dim_feedforward = 40  # inner layer dimension in the feed-forward network
     output_dim = 3
 
-    policy = SeqGenTransformer(input_dim, d_model, nhead, num_layers, dim_feedforward, output_dim)
+    policy = StateSeqTransformer(input_dim, output_dim, d_model, nhead, num_layers, dim_feedforward, output_dim).to(ptu.device)
 
-else:
+elif args["policy_type"] == "mem_seq_transformer":
+
+    input_dim = 14           # observations
+    output_dim = 3          # actions
+    d_model = 512           # model's main dimensionality
+    nhead = 8               # number of heads in multi-head attention
+    num_layers = 6          # number of transformer layers
+    dim_feedforward = 2048  # inner layer dimension in the feed-forward network
+    past_hzn = 10          # how far context looks into past (x,u,r) triplets
+    future_hzn = 10        # how far context looks into future (r)
+
+    policy = MemSeqTransformer(
+        input_dim=input_dim, 
+        output_dim=output_dim, 
+        d_model=d_model, 
+        nhead=nhead, 
+        num_layers=num_layers, 
+        dim_feedforward=dim_feedforward, 
+        sequence_length=(past_hzn + future_hzn) * input_dim
+    ).to(ptu.device)
+
+    # the expected output of this is a set of future (u), of which the first will be chosen
+
+elif args["policy_type"] == 'mlp':
     policy = blocks.MLP(
         insize=policy_insize, outsize=nu, bias=True,
         linear_map=torch.nn.Linear,
         nonlin=torch.nn.ReLU,
         hsizes=[20, 20, 20, 20]
     ).to(ptu.device)
+
 policy_node = Node(policy, ['Obs'], ['U'], name='policy')
 node_list.append(policy_node)
 
