@@ -25,7 +25,6 @@ from dpc_sf.control.dpc.operations import Dynamics, processP2PPolicyInput, proce
 # torch.autograd.set_detect_anomaly(True)
 torch.manual_seed(0)
 np.random.seed(0)
-
 ptu.init_gpu(use_gpu=False)
 
 # save hyperparameters used

@@ -77,6 +77,7 @@ class processP2PMemSeqPolicyInput(torch.nn.Module):
         self.minibatch_size = minibatch_size
         self.nx = nx
         self.past_hzn = past_hzn
+        
         self.x_history      = ptu.create_zeros([self.minibatch_size, self.nx * self.past_hzn])
         self.r_history      = ptu.create_zeros([self.minibatch_size, self.nx * self.past_hzn])
         self.c_pos_history  = ptu.create_zeros([self.minibatch_size, self.past_hzn])
@@ -119,7 +120,7 @@ class processP2PMemSeqPolicyInput(torch.nn.Module):
 
             self.c_vel_history[:, :-1] = self.c_vel_history[:, 1:]
             self.c_vel_history[:, -1] = c_vel
-            
+
         output = torch.hstack([
             self.x_history, 
             self.r_history, 

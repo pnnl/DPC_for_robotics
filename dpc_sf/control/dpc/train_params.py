@@ -12,7 +12,7 @@ parser.add_argument('--radius',                     type=float, default=0.50,   
 parser.add_argument('--save_path',                  type=str,   default="data/policy/DPC_p2p/",   help='Path to save the policies')
 parser.add_argument('--media_path',                 type=str,   default="data/media/dpc/images/", help='Path to save the policies')
 parser.add_argument('--nstep',                      type=int,   default=100,                      help='Number of timesteps in the horizon')
-parser.add_argument('--epochs',                     type=int,   default=10,                       help='Number of training epochs per iteration')
+parser.add_argument('--epochs',                     type=int,   default=30,                       help='Number of training epochs per iteration')
 parser.add_argument('--iterations',                 type=int,   default=1,                        help='Number of iterations')
 parser.add_argument('--lr',                         type=float, default=0.05,                     help='Learning rate')
 parser.add_argument('--Ts',                         type=float, default=0.1,                      help='Timestep')
@@ -49,7 +49,7 @@ parser.add_argument('--p2p_dataset',                type=str,  default='cylinder
 parser.add_argument('--shuffle_dataloaders',        type=bool,  default=False,                    help='Terminal constraint initial radius')
 parser.add_argument('--fig8_dataset',               type=str,  default='uniform_random',                    help='Terminal constraint initial radius')
 parser.add_argument('--fig8_average_velocity',      type=float,  default=0.25,                    help='Terminal constraint initial radius')
-parser.add_argument('--policy_type',                type=str,  default='mem_seq_transformer',   choices=['mlp','state_seq_transformer', 'mem_seq_transformer']  ,               help='Terminal constraint initial radius')
+parser.add_argument('--policy_type',                type=str,  default='mlp',   choices=['mlp','state_seq_transformer', 'mem_seq_transformer']  ,               help='Terminal constraint initial radius')
 parser.add_argument('--past_hzn',                   type=int,  default=10,               help='Terminal constraint initial radius')
 
 

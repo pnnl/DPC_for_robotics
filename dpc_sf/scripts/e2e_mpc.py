@@ -17,10 +17,10 @@ def e2e_test_opt(
         save_dir='data/mpc_timehistories/',
         save_name=None,
         plot_prediction=True,
-        Ts=0.1,
+        Ts=0.001,
         Ti=0.0,
-        Tf=1.0,
-        N=30,
+        Tf=20.0,
+        N=200,
         Tf_hzn = 3.0,
     ):
 
@@ -110,6 +110,23 @@ def e2e_test_opt(
             render_interval *= 2
         return render_interval
     render_interval = compute_render_interval(num_steps, max_frames)
+
+    if save_trajectory:
+        print("saving the state and input histories...")
+        x_history = np.stack(quad.state_history)
+        u_history = np.stack(quad.input_history)
+        if save_name is None:
+            np.savez(
+                file = f"{save_dir}/xu_{test}_{backend}_{str(Ts)}.npz",
+                x_history = x_history,
+                u_history = u_history
+            )
+        elif save_name is not None:
+            np.savez(
+                file = f"{save_dir}/{save_name}",
+                x_history = x_history,
+                u_history = u_history
+            )
 
     print(f"animating {backend} {test} with render interval of {render_interval}")
     if plot_prediction is True:
@@ -294,12 +311,14 @@ def e2e_test(
 
 if __name__ == '__main__':
     # run through all mpc tests
-    e2e_test_opt('wp_p2p', 'eom')
-    e2e_test_opt('wp_traj', 'eom')
-    e2e_test_opt('fig8', 'eom')
-    e2e_test_opt('wp_p2p', 'mj')
-    e2e_test_opt('wp_traj', 'mj')
-    e2e_test_opt('fig8', 'mj')
+    e2e_test_opt('wp_p2p', 'mj', Ts=0.001, N=2000, Tf_hzn=2.0, Tf=5.0)
+    e2e_test_opt('fig8', 'mj', Ts=0.001, N=3000, Tf_hzn=3.0, Tf=15.0)
+    e2e_test_opt('wp_traj', 'mj', Ts=0.001, N=30, Tf_hzn=3.0, Tf=15.0)
+
+    # e2e_test_opt('wp_p2p', 'eom')
+    # e2e_test_opt('wp_traj', 'eom')
+    # e2e_test_opt('fig8', 'eom')
+
     # e2e_test('wp_traj', 'mj')
     # e2e_test('wp_p2p', 'mj')
     # e2e_test('fig8', 'mj')

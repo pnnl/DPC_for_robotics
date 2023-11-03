@@ -22,7 +22,7 @@ class SafetyFilter():
         self.nx = params['nx']                                      # Number of states
         self.nu = params['nu']                                      # Number of control inputs
         try:
-            self.ny = params['ny']                                      # Number of outputs
+            self.ny = params['ny']                                  # Number of outputs
         except:
             self.ny = self.nx
         self.hf = constraints['hf']                                 # Function defining the terminal set (sublevel set of hf)

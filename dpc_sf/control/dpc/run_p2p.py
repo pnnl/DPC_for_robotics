@@ -27,21 +27,20 @@ from dpc_sf.control.dpc.operations import posVel2cyl
 parser = argparse.ArgumentParser(description="Description of your program")
 
 parser.add_argument("--Ts",                 type=float, default=0.001, help="Your description for Ts")
-parser.add_argument("--save_path",          type=str, default="data/policy/DPC_p2p/", help="Path to save data")
-parser.add_argument("--policy_name",        type=str, default="policy_experimental_tt.pth", help="Name of the policy file")
-parser.add_argument("--normalize",          type=bool, default=False, help="Whether to normalize or not")
-parser.add_argument("--include_actuators",  type=bool, default=True, help="Whether to include actuators or not")
-parser.add_argument("--backend",            type=str, default='mj', choices=['mj', 'eom'], help="Backend to use, 'mj' or 'eom'")
-parser.add_argument("--nstep",              type=int, default=10000, help="Number of steps")
+parser.add_argument("--save_path",          type=str,   default="data/policy/DPC_p2p/", help="Path to save data")
+parser.add_argument("--policy_name",        type=str,   default="policy_experimental_tt.pth", help="Name of the policy file")
+parser.add_argument("--normalize",          type=bool,  default=False, help="Whether to normalize or not")
+parser.add_argument("--include_actuators",  type=bool,  default=True, help="Whether to include actuators or not")
+parser.add_argument("--backend",            type=str,   default='mj', choices=['mj', 'eom'], help="Backend to use, 'mj' or 'eom'")
+parser.add_argument("--nstep",              type=int,   default=10000, help="Number of steps")
 parser.add_argument("--radius",             type=float, default=0.5, help="Radius")
-parser.add_argument("--num_trajectories",   type=int, default=9)
-parser.add_argument("--generate_new_data",  type=bool, default=True)
+parser.add_argument("--num_trajectories",   type=int,   default=9)
+parser.add_argument("--generate_new_data",  type=bool,  default=True)
 parser.add_argument("--x_min",              type=float, default=-1.)
 parser.add_argument("--x_max",              type=float, default=1.)
 parser.add_argument("--y_min",              type=float, default=-1.)
 parser.add_argument("--y_max",              type=float, default=1.)
-parser.add_argument("--animate_traj_idx",   type=int, default=4)
-
+parser.add_argument("--animate_traj_idx",   type=int,   default=4)
 
 args = parser.parse_args()
 
@@ -89,7 +88,7 @@ class mlpGain(torch.nn.Module):
         ) -> None:
         super().__init__()
         self.gain = gain # * 0.1
-        self.gravity_offset = ptu.create_tensor([0,0,-quad_params["hover_thr"]]).unsqueeze(0)
+        self.gravity_offset = ptu.tensor([0,0,-quad_params["hover_thr"]]).unsqueeze(0)
     def forward(self, u):
         """literally apply gain to the output"""
         output = u * self.gain + self.gravity_offset
@@ -165,7 +164,7 @@ if include_actuators:
         data.append({
             'X': X_iter,
             'R': torch.concatenate([ptu.from_numpy(R(1)[None,:][None,:].astype(np.float32))]*nstep, axis=1),
-            'Cyl': torch.concatenate([ptu.create_tensor([[[1,1]]])]*nstep, axis=1),
+            'Cyl': torch.concatenate([ptu.tensor([[[1,1]]])]*nstep, axis=1),
         })
 
     # data = []
@@ -183,7 +182,7 @@ else:
     data = {
         'X': ptu.from_numpy(quad_params["default_init_state_np"][:13][None,:][None,:].astype(np.float32)),
         'R': torch.concatenate([ptu.from_numpy(R(1)[None,:][None,:].astype(np.float32))]*nstep, axis=1),
-        'Cyl': torch.concatenate([ptu.create_tensor([[[1,1]]])]*nstep, axis=1),
+        'Cyl': torch.concatenate([ptu.tensor([[[1,1]]])]*nstep, axis=1),
     }
 
 if generate_new_data is True:
@@ -196,9 +195,9 @@ if generate_new_data is True:
         # reset simulation to correct initial conditions
         cl_system.nodes[4].callable.mj_reset(dataset['X'].squeeze().squeeze())
         # Perform CLP Simulation
-        cl_system(dataset)
+        output = cl_system(dataset)
         # save
-        np.savez(save_path + str(idx), dataset['X'])
+        np.savez(save_path + str(idx), output['X'])
 
 
 print("done")

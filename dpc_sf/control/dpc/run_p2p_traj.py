@@ -25,7 +25,7 @@ from dpc_sf.control.dpc.operations import processP2PTrajPolicyInput
 Ts = 0.001
 include_actuators = True
 set_vel_zero = False # dont set this true
-save_path = "data/policy/DPC_traj/wp_traj.pth"
+save_path = "data/policy/DPC_traj/policy.pth"
 nstep = 20000
 average_vel = 0.5
 
@@ -60,7 +60,7 @@ class mlpGain(torch.nn.Module):
         ) -> None:
         super().__init__()
         self.gain = gain
-        self.gravity_offset = ptu.create_tensor([0,0,-quad_params["hover_thr"]]).unsqueeze(0)
+        self.gravity_offset = ptu.tensor([0,0,-quad_params["hover_thr"]]).unsqueeze(0)
     def forward(self, u):
         """literally apply gain to the output"""
         output = u * self.gain + self.gravity_offset

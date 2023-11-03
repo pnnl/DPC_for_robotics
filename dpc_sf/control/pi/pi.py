@@ -26,7 +26,7 @@ ctrl_params["Py"]    = 1.0
 ctrl_params["Px"]    = ctrl_params["Py"]
 ctrl_params["Pz"]    = 1.0
 
-ctrl_params["pos_P_gain"] = ptu.create_tensor([ctrl_params["Px"], ctrl_params["Py"], ctrl_params["Pz"]])
+ctrl_params["pos_P_gain"] = ptu.tensor([ctrl_params["Px"], ctrl_params["Py"], ctrl_params["Pz"]])
 
 # Velocity P-D gains
 ctrl_params["Pxdot"] = 5.0
@@ -41,9 +41,9 @@ ctrl_params["Pzdot"] = 4.0
 ctrl_params["Dzdot"] = 0.5
 ctrl_params["Izdot"] = 5.0
 
-ctrl_params["vel_P_gain"] = ptu.create_tensor([ctrl_params["Pxdot"], ctrl_params["Pydot"], ctrl_params["Pzdot"]])
-ctrl_params["vel_D_gain"] = ptu.create_tensor([ctrl_params["Dxdot"], ctrl_params["Dydot"], ctrl_params["Dzdot"]])
-ctrl_params["vel_I_gain"] = ptu.create_tensor([ctrl_params["Ixdot"], ctrl_params["Iydot"], ctrl_params["Izdot"]])
+ctrl_params["vel_P_gain"] = ptu.tensor([ctrl_params["Pxdot"], ctrl_params["Pydot"], ctrl_params["Pzdot"]])
+ctrl_params["vel_D_gain"] = ptu.tensor([ctrl_params["Dxdot"], ctrl_params["Dydot"], ctrl_params["Dzdot"]])
+ctrl_params["vel_I_gain"] = ptu.tensor([ctrl_params["Ixdot"], ctrl_params["Iydot"], ctrl_params["Izdot"]])
 
 # Attitude P gains
 ctrl_params["Pphi"] = 8.0
@@ -51,7 +51,7 @@ ctrl_params["Ptheta"] = ctrl_params["Pphi"]
 ctrl_params["Ppsi"] = 1.5
 ctrl_params["PpsiStrong"] = 8
 
-ctrl_params["att_P_gain"] = ptu.create_tensor([ctrl_params["Pphi"], ctrl_params["Ptheta"], ctrl_params["Ppsi"]])
+ctrl_params["att_P_gain"] = ptu.tensor([ctrl_params["Pphi"], ctrl_params["Ptheta"], ctrl_params["Ppsi"]])
 
 # Rate P-D gains
 ctrl_params["Pp"] = 1.5
@@ -61,15 +61,15 @@ ctrl_params["Dq"] = ctrl_params["Dp"]
 ctrl_params["Pr"] = 1.0
 ctrl_params["Dr"] = 0.1
 
-ctrl_params["rate_P_gain"] = ptu.create_tensor([ctrl_params["Pp"], ctrl_params["Pq"], ctrl_params["Pr"]])
-ctrl_params["rate_D_gain"] = ptu.create_tensor([ctrl_params["Dp"], ctrl_params["Dq"], ctrl_params["Dr"]])
+ctrl_params["rate_P_gain"] = ptu.tensor([ctrl_params["Pp"], ctrl_params["Pq"], ctrl_params["Pr"]])
+ctrl_params["rate_D_gain"] = ptu.tensor([ctrl_params["Dp"], ctrl_params["Dq"], ctrl_params["Dr"]])
 
 # Max Velocities
 ctrl_params["uMax"] = 5.0
 ctrl_params["vMax"] = 5.0
 ctrl_params["wMax"] = 5.0
 
-ctrl_params["velMax"] = ptu.create_tensor([ctrl_params["uMax"], ctrl_params["vMax"], ctrl_params["wMax"]])
+ctrl_params["velMax"] = ptu.tensor([ctrl_params["uMax"], ctrl_params["vMax"], ctrl_params["wMax"]])
 ctrl_params["velMaxAll"] = 5.0
 
 ctrl_params["saturateVel_separetely"] = False
@@ -82,7 +82,7 @@ ctrl_params["pMax"] = 200.0*deg2rad
 ctrl_params["qMax"] = 200.0*deg2rad
 ctrl_params["rMax"] = 150.0*deg2rad
 
-ctrl_params["rateMax"] = ptu.create_tensor([ctrl_params["pMax"], ctrl_params["qMax"], ctrl_params["rMax"]])
+ctrl_params["rateMax"] = ptu.tensor([ctrl_params["pMax"], ctrl_params["qMax"], ctrl_params["rMax"]])
 roll_pitch_gain = 0.5*(ctrl_params["att_P_gain"][0] + ctrl_params["att_P_gain"][1])
 
 # assumed yaw_w to be 1 to allow for much better gradients
@@ -90,7 +90,7 @@ ctrl_params["yaw_w"] = torch.clip(ctrl_params["att_P_gain"][2]/roll_pitch_gain, 
 ctrl_params["att_P_gain"][2] = roll_pitch_gain
 
 # yaw rate feedforward term and clip it
-ctrl_params["yawFF"] = ptu.create_tensor(0.0)
+ctrl_params["yawFF"] = ptu.tensor(0.0)
 
 # add the calculated rateMax term clip to yawFF
 ctrl_params["yawFF"] = torch.clip(ctrl_params["yawFF"], -ctrl_params["rateMax"][2], ctrl_params["rateMax"][2])
@@ -281,7 +281,7 @@ class XYZ_Vel(torch.nn.Module):
         thrust_z_sp = torch.clip(thrust_z_sp, uMin + 1e-3, uMax - 1e-3)
 
         # Max allowed thrust in NE based on tilt and excess thrust
-        thrust_max_xy_tilt = torch.abs(thrust_z_sp)*torch.tan(ptu.create_tensor(self.ctrl_params["tiltMax"]))
+        thrust_max_xy_tilt = torch.abs(thrust_z_sp)*torch.tan(ptu.tensor(self.ctrl_params["tiltMax"]))
         thrust_max_xy = torch.sqrt(self.quad_params["maxThr"]**2 - thrust_z_sp**2)
         thrust_max_xy_min = torch.min(thrust_max_xy, thrust_max_xy_tilt)
 
@@ -343,7 +343,7 @@ class XYZ_Vel(torch.nn.Module):
         self.thr_int[mask, 2] += self.ctrl_params["vel_I_gain"][2] * vel_z_error[mask] * self.Ts * self.quad_params["useIntegral"]
 
         # Apply the limitation only on the relevant parts
-        limited = torch.min(torch.abs(self.thr_int[mask, 2]), ptu.create_tensor([self.quad_params["maxThr"]]))
+        limited = torch.min(torch.abs(self.thr_int[mask, 2]), ptu.tensor([self.quad_params["maxThr"]]))
 
         # replace this operation in place changes with non in-place
         # self.thr_int[mask, 2] = limited * torch.sign(self.thr_int[mask, 2])
@@ -356,7 +356,7 @@ class XYZ_Vel(torch.nn.Module):
         # if not (stop_int_D):
         #     self.thr_int[:,2] += self.ctrl_params["vel_I_gain"][2]*vel_z_error*self.Ts * self.quad_params["useIntegral"]
         #     # Limit thrust integral
-        #     self.thr_int[:,2] = torch.min(torch.abs(self.thr_int[:,2]), ptu.create_tensor([self.quad_params["maxThr"]]))*torch.sign(self.thr_int[:,2])
+        #     self.thr_int[:,2] = torch.min(torch.abs(self.thr_int[:,2]), ptu.tensor([self.quad_params["maxThr"]]))*torch.sign(self.thr_int[:,2])
 
         # Saturate thrust setpoint in D-direction
         thrust_z_sp = torch.clip(thrust_z_sp, uMin + 1e-3, uMax - 1e-3)
@@ -367,7 +367,7 @@ class XYZ_Vel(torch.nn.Module):
         thrust_xy_sp = self.ctrl_params["vel_P_gain"][0:2]*vel_xy_error - self.ctrl_params["vel_D_gain"][0:2]*vel_dot[:,0:2] + self.quad_params["mB"]*(acc_sp[:,0:2]) + self.thr_int[:,0:2]
 
         # Max allowed thrust in NE based on tilt and excess thrust
-        thrust_max_xy_tilt = torch.abs(thrust_z_sp)*torch.tan(ptu.create_tensor(self.ctrl_params["tiltMax"]))
+        thrust_max_xy_tilt = torch.abs(thrust_z_sp)*torch.tan(ptu.tensor(self.ctrl_params["tiltMax"]))
         thrust_max_xy = torch.sqrt(self.quad_params["maxThr"]**2 - thrust_z_sp**2)
         thrust_max_xy_min = torch.min(thrust_max_xy, thrust_max_xy_tilt)
 

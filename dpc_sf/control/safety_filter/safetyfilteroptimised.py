@@ -9,6 +9,7 @@ from casadi import *
 import numpy as np
 from tqdm import tqdm
 import traceback
+import gc
 from dpc_sf.dynamics.eom_pt import QuadcopterPT
 from dpc_sf.dynamics.eom_ca import QuadcopterCA
 
