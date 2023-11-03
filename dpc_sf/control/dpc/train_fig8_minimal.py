@@ -1,6 +1,5 @@
 from datetime import datetime
 import os
-import json 
 import torch 
 import numpy as np
 
@@ -10,216 +9,215 @@ from neuromancer.problem import Problem
 from neuromancer.constraint import variable
 from neuromancer.loss import BarrierLoss
 from neuromancer.modules import blocks
-from neuromancer.dynamics import integrators, ode
-from neuromancer.callbacks import Callback
+from neuromancer.dynamics import integrators
 
 # replace this for supercomputer training john
 from dpc_sf.utils import pytorch_utils as ptu
-from dpc_sf.control.dpc.callback import WP_Callback, LinTrajCallback, SinTrajCallback
+from dpc_sf.control.dpc.callback import SinTrajCallback
 from dpc_sf.control.dpc.generate_dataset import DatasetGenerator
 
 # call the argparser to get parameters for run
-from dpc_sf.control.dpc.train_params import args_dict as args
-from dpc_sf.control.dpc.operations import Dynamics, processP2PPolicyInput, processFig8TrajPolicyInput, processP2PTrajPolicyInput, radMultiplier, StateSeqTransformer, MemSeqTransformer, processP2PMemSeqPolicyInput
+from dpc_sf.control.dpc.operations import Dynamics, processFig8TrajPolicyInput
 
-# torch.autograd.set_detect_anomaly(True)
-torch.manual_seed(0)
-np.random.seed(0)
-ptu.init_gpu(use_gpu=False)
+def train_fig8(
+        radius          = 0.50,                      # cylinder radius
+        nstep           = 100,                       # number of steps per rollout
+        epochs          = 10,                        # number of times we train on the dataset
+        iterations      = 1,                         # number of times we retrain on a new dataset "epoch" times
+        lr              = 0.05,                      # learning rate
+        Ts              = 0.1,                       # timestep of surrogate high level simulation
+        minibatch_size  = 10,                        # number of rollouts per gradient step during training
+        batch_size      = 5000,                      # number of rollouts in dataset and per epoch
+        x_range         = 3.,                        # range of x generated in dataset
+        r_range         = 3.,                        # range of r generated in dataset
+        cyl_range       = 3.,                        # range of cylinder positions in dataset
+        lr_multiplier   = 0.2,                       # in subsequent iterations multiply lr by this number
+        sample_type     = 'uniform',                 # 
+        barrier_type    = 'softexp',                 # the constraint violations are penalised using a soft exponential function
+        barrier_alpha   = 0.05,                      # the decay parameter for the constraint violation parameter away from constraint
+        Qpos            = 5.00,                      # position error penalty
+        Qvel            = 5.00,                      # velocity error penalty 
+        R               = 0.1,                       # input penalty
+        optimizer       = 'adagrad',                 #
+        fig8_observe_error = True,
+        p2p_dataset     = 'cylinder_random',         #
+        save_path       = "data/policy/DPC_fig8/",    #
+        media_path      = "data/media/dpc/images/"  #
+    ):
+    # save hyperparameters used
+    # -------------------------
+    current_datetime = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    images_path = media_path + current_datetime + '/'
 
-# save hyperparameters used
-# -------------------------
-current_datetime = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-images_path = args["media_path"] + current_datetime + '/'
+    # Check if directory exists, and if not, create it
+    if not os.path.exists(images_path):
+        os.makedirs(images_path)
 
-# Check if directory exists, and if not, create it
-if not os.path.exists(images_path):
-    os.makedirs(images_path)
+    # NeuroMANCER System Definition
+    # -----------------------------
 
-# Save to JSON
-with open(images_path + 'args.json', 'w') as f:
-    json.dump(args, f, indent=4)
+    nx = 6 # state size
+    nr = 6 # reference size
+    nu = 3 # input size
+    nc = 2 # cylinder distance and velocity
 
-# NeuroMANCER System Definition
-# -----------------------------
+    # Variables:
+    r = variable('R')           # the reference
+    u = variable('U')           # the input
+    x = variable('X')           # the state
+    idx = variable('Idx')       # the index of the current timestep into the horizon, used to find m below.
+    P = variable('P')           # the equation parameters of the fig8
 
-nx = 6 # state size
-nr = 6 # reference size
-nu = 3 # input size
-nc = 2 # cylinder distance and velocity
+    # Nodes:
+    node_list = []
 
-# Variables:
-r = variable('R')           # the reference
-u = variable('U')           # the input
-x = variable('X')           # the state
-idx = variable('Idx')       # the index of the current timestep into the horizon, used to find m below.
+    process_policy_input = processFig8TrajPolicyInput(use_error=fig8_observe_error)
+    process_policy_input_node = Node(process_policy_input, ['X', 'R', 'P'], ['Obs'], name='preprocess')
+    policy_insize = nx + nr * (not fig8_observe_error) + 4 # state, reference, equation parameters
+    node_list.append(process_policy_input_node)
 
-if args["task"] == 'wp_p2p':
-    cyl = variable('Cyl')       # the cylinder center coordinates
-    m = variable('M')           # radius multiplier, increase radius into horizon future
-elif args["task"] == 'fig8':
-    P = variable('P')   # the equation parameters of the fig8
+    policy = blocks.MLP(
+        insize=policy_insize, outsize=nu, bias=True,
+        linear_map=torch.nn.Linear,
+        nonlin=torch.nn.ReLU,
+        hsizes=[20, 20, 20, 20]
+    ).to(ptu.device)
+    policy_node = Node(policy, ['Obs'], ['U'], name='policy')
+    node_list.append(policy_node)
 
-# Nodes:
-node_list = []
+    dynamics = Dynamics(insize=9, outsize=6)
+    integrator = integrators.Euler(dynamics, h=torch.tensor(Ts))
+    dynamics_node = Node(integrator, ['X', 'U'], ['X'], name='dynamics')
+    node_list.append(dynamics_node)
 
-process_policy_input = processFig8TrajPolicyInput(use_error=args["fig8_observe_error"])
-process_policy_input_node = Node(process_policy_input, ['X', 'R', 'P'], ['Obs'], name='preprocess')
-policy_insize = nx + nr * (not args["fig8_observe_error"]) + 4 # state, reference, equation parameters
-node_list.append(process_policy_input_node)
+    print(f'node list used in cl_system: {node_list}')
+    # node_list = [node.callable.to(ptu.device) for node in node_list]
+    cl_system = System(node_list)
 
-policy = blocks.MLP(
-    insize=policy_insize, outsize=nu, bias=True,
-    linear_map=torch.nn.Linear,
-    nonlin=torch.nn.ReLU,
-    hsizes=[20, 20, 20, 20]
-).to(ptu.device)
-policy_node = Node(policy, ['Obs'], ['U'], name='policy')
-node_list.append(policy_node)
+    print(batch_size)
 
-dynamics = Dynamics(insize=9, outsize=6, x_std=args["x_noise_std"])
-integrator = integrators.Euler(dynamics, h=torch.tensor(args["Ts"]))
-dynamics_node = Node(integrator, ['X', 'U'], ['X'], name='dynamics')
-node_list.append(dynamics_node)
-
-print(f'node list used in cl_system: {node_list}')
-# node_list = [node.callable.to(ptu.device) for node in node_list]
-cl_system = System(node_list)
-
-print(args['batch_size'])
-
-# Dataset Generation Class
-# ------------------------
-dataset = DatasetGenerator(
-    p2p_dataset             = args["p2p_dataset"],
-    task                    = args["task"],
-    x_range                 = args["x_range"],
-    r_range                 = args["r_range"],
-    cyl_range               = args["cyl_range"],
-    radius                  = args["radius"],
-    batch_size              = args["batch_size"],
-    minibatch_size          = args["minibatch_size"],
-    nstep                   = args["nstep"],
-    sample_type             = args["sample_type"],
-    nx                      = nx,
-    validate_data           = args["validate_data"],
-    shuffle_dataloaders     = args["shuffle_dataloaders"],
-    average_velocity        = args["fig8_average_velocity"],
-    device                  = ptu.device
-)
-
-
-# Optimisation Problem Setup
-# --------------------------
-
-"""
-NOTE:
-- Use of a BarrierLoss, which provides a loss which increases the closer to a constraint violation
-  we come, has proven much more effective than a PenaltyLoss in obstacle avoidance. The PenaltyLoss 
-  is either on or off, and so has a poor learning signal for differentiable problems, but the BarrierLoss
-  provides a constant learning signal which has proven effective.
-- Not penalising velocity, and only position has frequently led to controllers that do not converge
-  to zero velocity, and therefore drift over time. Therefore velocities have been kept in the 
-  regulation loss term.
-"""
-
-# Define Constraints:
-constraints = []
-
-# Define Loss:
-objectives = []
-
-action_loss = args["R"] * (u == ptu.tensor(0.))^2  # control penalty
-action_loss.name = 'action_loss'
-objectives.append(action_loss)
-
-pos_loss = args["Qpos"] * (x[:,:,::2] == r[:,:,::2])^2
-pos_loss.name = 'pos_loss'
-objectives.append(pos_loss)
-
-vel_loss = args["Qvel"] * (x[:,:,1::2] == r[:,:,1::2])^2
-vel_loss.name = 'vel_loss'
-objectives.append(vel_loss)
-
-# objectives = [action_loss, pos_loss, vel_loss]
-loss = BarrierLoss(objectives, constraints, barrier=args["barrier_type"], alpha=args["barrier_alpha"])
-optimizer = torch.optim.Adagrad(policy.parameters(), lr=args["lr"])
-problem = Problem([cl_system], loss, grad_inference=True)
-
-# Custom Callack Setup
-# --------------------
-callback = SinTrajCallback(save_dir=current_datetime, media_path=args["media_path"], nstep=args["nstep"], nx=nx, Ts=args["Ts"])
-
-# Perform the Training
-# --------------------
-for i in range(args["iterations"]):
-    print(f'training with prediction horizon: {args["nstep"]}, lr: {args["lr"]}, delta_terminal: {args["delta_terminal"]}')
-
-    # Get First Datasets
-    # ------------
-    dataset.nstep = args["nstep"]
-    train_loader, dev_loader = dataset.get_loaders()
-
-    trainer = Trainer(
-        problem,
-        train_loader,
-        dev_loader,
-        dev_loader,
-        optimizer,
-        callback=callback,
-        epochs=args["epochs"],
-        patience=args["epochs"],
-        train_metric="train_loss",
-        dev_metric="dev_loss",
-        test_metric="test_loss",
-        eval_metric='dev_loss',
-        warmup=400,
-        lr_scheduler=False,
-        device=ptu.device
+    # Dataset Generation Class
+    # ------------------------
+    dataset = DatasetGenerator(
+        p2p_dataset             = p2p_dataset,
+        task                    = 'fig8',
+        x_range                 = x_range,
+        r_range                 = r_range,
+        cyl_range               = cyl_range,
+        radius                  = radius,
+        batch_size              = batch_size,
+        minibatch_size          = minibatch_size,
+        nstep                   = nstep,
+        sample_type             = sample_type,
+        nx                      = nx,
+        validate_data           = True,
+        shuffle_dataloaders     = False,
+        average_velocity        = 1.0,
+        device                  = ptu.device
     )
 
-    # Train Over Nsteps
-    # -----------------
-    cl_system.nsteps = args["nstep"]
-    best_model = trainer.train()
-    trainer.model.load_state_dict(best_model)
 
-    # Update Parameters for the Next Iteration
-    # ----------------------------------------
-    args["lr"]              *= args["lr_multiplier"] # 0.2
-    args["Q_con"]           *= 1
-    args["Q_terminal"]      *= 1
-    args["delta_terminal"]  *= 1 # 0.2
-    args["nstep"]           *= args["nstep_multiplier"] # 1
+    # Optimisation Problem Setup
+    # --------------------------
 
-    # update the prediction horizon
-    cl_system.nsteps = args["nstep"]
+    """
+    NOTE:
+    - Use of a BarrierLoss, which provides a loss which increases the closer to a constraint violation
+    we come, has proven much more effective than a PenaltyLoss in obstacle avoidance. The PenaltyLoss 
+    is either on or off, and so has a poor learning signal for differentiable problems, but the BarrierLoss
+    provides a constant learning signal which has proven effective.
+    - Not penalising velocity, and only position has frequently led to controllers that do not converge
+    to zero velocity, and therefore drift over time. Therefore velocities have been kept in the 
+    regulation loss term.
+    """
 
-    if args["use_old_datasets"] is True:
-        # Get New Datasets
-        # ----------------
-        train_data, dev_data = dataset.get_dictdatasets()
+    # Define Constraints:
+    constraints = []
 
-        # apply new training data and learning rate to trainer
-        trainer.train_data, trainer.dev_data, trainer.test_data = train_data, dev_data, dev_data
+    # Define Loss:
+    objectives = []
 
-    optimizer.param_groups[0]['lr'] = args["lr"]
+    action_loss = R * (u == ptu.tensor(0.))^2  # control penalty
+    action_loss.name = 'action_loss'
+    objectives.append(action_loss)
+
+    pos_loss = Qpos * (x[:,:,::2] == r[:,:,::2])^2
+    pos_loss.name = 'pos_loss'
+    objectives.append(pos_loss)
+
+    vel_loss = Qvel * (x[:,:,1::2] == r[:,:,1::2])^2
+    vel_loss.name = 'vel_loss'
+    objectives.append(vel_loss)
+
+    # objectives = [action_loss, pos_loss, vel_loss]
+    loss = BarrierLoss(objectives, constraints, barrier=barrier_type, alpha=barrier_alpha)
+    optimizer = torch.optim.Adagrad(policy.parameters(), lr=lr)
+    problem = Problem([cl_system], loss, grad_inference=True)
+
+    # Custom Callack Setup
+    # --------------------
+    callback = SinTrajCallback(save_dir=current_datetime, media_path=media_path, nstep=nstep, nx=nx, Ts=Ts)
+
+    # Perform the Training
+    # --------------------
+    for i in range(iterations):
+        print(f'training with prediction horizon: {nstep}, lr: {lr}')
+
+        # Get First Datasets
+        # ------------
+        dataset.nstep = nstep
+        train_loader, dev_loader = dataset.get_loaders()
+
+        trainer = Trainer(
+            problem,
+            train_loader,
+            dev_loader,
+            dev_loader,
+            optimizer,
+            callback=callback,
+            epochs=epochs,
+            patience=epochs,
+            train_metric="train_loss",
+            dev_metric="dev_loss",
+            test_metric="test_loss",
+            eval_metric='dev_loss',
+            warmup=400,
+            lr_scheduler=False,
+            device=ptu.device
+        )
+
+        # Train Over Nsteps
+        # -----------------
+        cl_system.nsteps = nstep
+        best_model = trainer.train()
+        trainer.model.load_state_dict(best_model)
+
+        # Update Parameters for the Next Iteration
+        # ----------------------------------------
+        lr *= lr_multiplier # 0.2
+
+        # update the prediction horizon
+        cl_system.nsteps = nstep
+
+        optimizer.param_groups[0]['lr'] = lr
 
 
-if args["use_custom_callback"] is True:
     callback.animate()
     callback.delete_all_but_last_image()
 
-# Save the Policy
-# ---------------
+    # Save the Policy
+    # ---------------
 
-# %%
-if args["train"] is True:
+    # %%
     policy_state_dict = {}
     for key, value in best_model.items():
         if "callable." in key:
             new_key = key.split("nodes.0.nodes.1.")[-1]
             policy_state_dict[new_key] = value
-    torch.save(policy_state_dict, args["save_path"] + f"policy_experimental_tt.pth")
-else:
-    print(f"not saving policy as train is: {args['train']}")
+    torch.save(policy_state_dict, save_path + f"policy.pth")
+
+if __name__ == "__main__":
+    # torch.autograd.set_detect_anomaly(True)
+    torch.manual_seed(0)
+    np.random.seed(0)
+    ptu.init_gpu(use_gpu=True)

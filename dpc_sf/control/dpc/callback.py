@@ -481,6 +481,8 @@ class SinTrajCallback(Callback):
             'P': P
         }
 
+        data = {key: value.to(ptu.device) for key, value in data.items()}
+
         trajectories = trainer.model.nodes[0](data)
 
         plot_fig8_traj(output, trajectories, save_path=self.directory)
@@ -548,7 +550,7 @@ class LinTrajCallback(Callback):
             'X': torch.zeros(1, 1, self.nx, dtype=torch.float32), 
             'R': linspace_result 
         }
-        
+
         data = {key: value.to(ptu.device) for key, value in data.items()}
 
         trajectories = trainer.model.nodes[0](data)
