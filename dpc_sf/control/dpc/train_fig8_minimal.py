@@ -59,13 +59,11 @@ def train_fig8(
     nx = 6 # state size
     nr = 6 # reference size
     nu = 3 # input size
-    nc = 2 # cylinder distance and velocity
 
     # Variables:
     r = variable('R')           # the reference
     u = variable('U')           # the input
     x = variable('X')           # the state
-    idx = variable('Idx')       # the index of the current timestep into the horizon, used to find m below.
     P = variable('P')           # the equation parameters of the fig8
 
     # Nodes:
@@ -217,7 +215,10 @@ def train_fig8(
     torch.save(policy_state_dict, save_path + f"policy.pth")
 
 if __name__ == "__main__":
+    
     # torch.autograd.set_detect_anomaly(True)
     torch.manual_seed(0)
     np.random.seed(0)
     ptu.init_gpu(use_gpu=True)
+
+    train_fig8()

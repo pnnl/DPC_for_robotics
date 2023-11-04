@@ -4,4 +4,10 @@ time to complete run with 2000 step horizon, 2 second prediction horizon, 5 seco
 # fig8 - requires high fidelity
 predicted time to complete is 67:49:49, I think it will probably come down to 30 hours, maybe 40.
 
+ended up being 22:22:46 minutes with a 3000 step horizon, 3 seconds, 10 second simulation
+
+also ended up being pretty good from the MPC side
+
 # wp traj
+running it now with 3000 step, 3 second, 20 second sim, should take 44 hours if linear lol
+

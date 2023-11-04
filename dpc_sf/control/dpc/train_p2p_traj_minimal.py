@@ -217,7 +217,10 @@ def train_wp_traj(
     torch.save(policy_state_dict, save_path + f"policy.pth")
 
 if __name__ == "__main__":
+
     # torch.autograd.set_detect_anomaly(True)
     torch.manual_seed(0)
     np.random.seed(0)
     ptu.init_gpu(use_gpu=True)
+
+    train_wp_traj()

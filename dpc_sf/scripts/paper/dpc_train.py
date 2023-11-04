@@ -11,12 +11,9 @@ import numpy as np
 torch.manual_seed(0)
 np.random.seed(0)
 
-import dpc_sf.utils.pytorch_utils as ptu
 from dpc_sf.control.dpc.train_p2p_minimal import train_wp_p2p
 from dpc_sf.control.dpc.train_p2p_traj_minimal import train_wp_traj
 from dpc_sf.control.dpc.train_fig8_minimal import train_fig8
-
-ptu.init_gpu(use_gpu=True)
 
 train_wp_p2p(
     epochs=30,

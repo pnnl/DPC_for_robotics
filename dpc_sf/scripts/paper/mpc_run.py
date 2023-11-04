@@ -8,10 +8,26 @@ This will save all the MPC timehistories as well for later analysis.
 
 from dpc_sf.control.mpc.run import run_mpc
 
-
+run_mpc(
+    test='wp_traj', 
+    backend='mj', 
+    Ts=0.001, 
+    N=3000, 
+    Tf_hzn=3.0, 
+    Tf=20.0
+)
 
 run_mpc(
-    task='wp_p2p',
+    test='fig8',
+    backend='mj', 
+    Ts=0.001, 
+    N=3000, 
+    Tf_hzn=3.0, 
+    Tf=10.0
+)
+
+run_mpc(
+    test='wp_p2p',
     backend='mj', 
     Ts=0.001, 
     N=2000, 
@@ -19,22 +35,6 @@ run_mpc(
     Tf=5.0
 )
 
-run_mpc(
-    task='fig8',
-    backend='mj', 
-    Ts=0.001, 
-    N=3000, 
-    Tf_hzn=3.0, 
-    Tf=15.0
-)
 
-run_mpc(
-    task='wp_traj', 
-    backend='mj', 
-    Ts=0.001, 
-    N=30, 
-    Tf_hzn=3.0, 
-    Tf=15.0
-)
 
 

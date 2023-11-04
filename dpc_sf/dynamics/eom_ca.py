@@ -1,11 +1,11 @@
 import casadi as ca
-from dpc_sf.dynamics.params import params
+# from dpc_sf.dynamics.params import params
 import dpc_sf.utils.pytorch_utils as ptu
 
 class QuadcopterCA:
     def __init__(
             self,
-            params=params
+            params
         ) -> None:
         
         self.params = params

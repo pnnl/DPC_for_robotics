@@ -22,12 +22,7 @@ from dpc_sf.utils.animation import Animator
 
 from dpc_sf.control.dpc.operations import processP2PTrajPolicyInput
 
-Ts = 0.001
-include_actuators = True
-set_vel_zero = False # dont set this true
-save_path = "data/policy/DPC_traj/policy.pth"
-nstep = 20000
-average_vel = 0.5
+
 
 class stateRefCat(torch.nn.Module):
     def __init__(self) -> None:
@@ -49,14 +44,14 @@ class stateSelector(torch.nn.Module):
         print(f"selected_states: {x_reduced}")
         print(f"selected_states: {r_reduced}")
         # clip selected states to be fed into the agent:
-        x_reduced = torch.clip(x_reduced, min=torch.tensor(-3.), max=torch.tensor(3.))
-        r_reduced = torch.clip(r_reduced, min=torch.tensor(-3.), max=torch.tensor(3.))
+        x_reduced = torch.clip(x_reduced, min=ptu.tensor(-3.), max=ptu.tensor(3.))
+        r_reduced = torch.clip(r_reduced, min=ptu.tensor(-3.), max=ptu.tensor(3.))
         return x_reduced, r_reduced
 
 class mlpGain(torch.nn.Module):
     def __init__(
             self, 
-            gain= torch.tensor([1.0,1.0,1.0])#torch.tensor([-0.1, -0.1, -0.01])
+            gain= ptu.tensor([1.0,1.0,1.0])#torch.tensor([-0.1, -0.1, -0.01])
         ) -> None:
         super().__init__()
         self.gain = gain
@@ -66,100 +61,119 @@ class mlpGain(torch.nn.Module):
         output = u * self.gain + self.gravity_offset
         print(f"gained u: {output}")
         return output
-    
-state_selector = stateSelector()
-state_selector_node = Node(state_selector, ['X', 'R'], ['X_reduced', 'R_reduced'], name='state_selector')
 
-state_ref_cat = processP2PTrajPolicyInput(use_error=True)
-state_ref_cat_node = Node(state_ref_cat, ['X_reduced', 'R_reduced'], ['Obs'])
+def run_wp_traj(
+        Ts = 0.001,
+        include_actuators = True,
+        set_vel_zero = False, # dont set this true
+        save_path = "data/policy/DPC_traj/policy.pth",
+        nstep = 20000,
+        average_vel = 0.5,
+    ):
 
-mlp = blocks.MLP(6, 3, bias=True,
-                 linear_map=torch.nn.Linear,
-                 nonlin=torch.nn.ReLU,
-                 hsizes=[20, 20, 20, 20])
-mlp_node = Node(mlp, ['Obs'], ['xyz_thr'], name='mlp')
+    state_selector = stateSelector()
+    state_selector_node = Node(state_selector, ['X', 'R'], ['X_reduced', 'R_reduced'], name='state_selector')
 
-mlp_gain = mlpGain()
-mlp_gain_node = Node(mlp_gain, ['xyz_thr'], ['xyz_thr_gained'], name='gain')
+    state_ref_cat = processP2PTrajPolicyInput(use_error=True)
+    state_ref_cat_node = Node(state_ref_cat, ['X_reduced', 'R_reduced'], ['Obs'])
 
-pi = XYZ_Vel(Ts=Ts, bs=1, input='xyz_thr', include_actuators=include_actuators)
-pi_node = Node(pi, ['X', 'xyz_thr_gained'], ['U'], name='pi')
+    mlp = blocks.MLP(6, 3, bias=True,
+                    linear_map=torch.nn.Linear,
+                    nonlin=torch.nn.ReLU,
+                    hsizes=[20, 20, 20, 20]).to(ptu.device)
+    mlp_node = Node(mlp, ['Obs'], ['xyz_thr'], name='mlp')
 
-sys = QuadcopterDPC(
-    params=quad_params,
-    nx=13,
-    nu=4,
-    ts=Ts,
-    normalize=False,
-    mean=None,
-    var=None,
-    include_actuators=include_actuators
-)
-sys_node = Node(sys, input_keys=['X', 'U'], output_keys=['X'], name='dynamics')
+    mlp_gain = mlpGain()
+    mlp_gain_node = Node(mlp_gain, ['xyz_thr'], ['xyz_thr_gained'], name='gain')
 
-cl_system = System([state_selector_node, state_ref_cat_node, mlp_node, mlp_gain_node, pi_node, sys_node], nsteps=100)
+    pi = XYZ_Vel(Ts=Ts, bs=1, input='xyz_thr', include_actuators=include_actuators)
+    pi_node = Node(pi, ['X', 'xyz_thr_gained'], ['U'], name='pi')
 
-# the reference about which we generate data
-R = waypoint_reference('wp_traj', average_vel=1.0, include_actuators=include_actuators)
-# r = quad_params["default_init_state_np"]
+    sys = QuadcopterDPC(
+        params=quad_params,
+        nx=13,
+        nu=4,
+        ts=Ts,
+        normalize=False,
+        mean=None,
+        var=None,
+        include_actuators=include_actuators
+    )
+    sys_node = Node(sys, input_keys=['X', 'U'], output_keys=['X'], name='dynamics')
 
-# test closed loop
-print(f"testing closed loop control...")
-# test call of closed loop system
+    cl_system = System([state_selector_node, state_ref_cat_node, mlp_node, mlp_gain_node, pi_node, sys_node], nsteps=100)
 
-# Generate time points using linspace.
-time_points = torch.linspace(0, Ts * nstep, nstep)
+    # the reference about which we generate data
+    R = waypoint_reference('wp_traj', average_vel=1.0, include_actuators=include_actuators)
+    # r = quad_params["default_init_state_np"]
 
-# Get the references for each time point.
-ref_sequence = [ptu.from_numpy(R(t.item())[None,:][None,:].astype(np.float32)) for t in time_points]
+    # test closed loop
+    print(f"testing closed loop control...")
+    # test call of closed loop system
 
-# Stack the references on top of each other.
-ref_tensor = torch.cat(ref_sequence, axis=1)
+    # Generate time points using linspace.
+    time_points = torch.linspace(0, Ts * nstep, nstep)
 
-P = torch.concat([torch.tensor([[[4,4,4,-5]]])] * (nstep + 1), dim=1)
+    # Get the references for each time point.
+    ref_sequence = [ptu.from_numpy(R(t.item())[None,:][None,:].astype(np.float32)) for t in time_points]
 
-if include_actuators:
-    data = {
-        'X': ptu.from_numpy(quad_params["default_init_state_np"][None,:][None,:].astype(np.float32)),
-        'R': ref_tensor,
-    }
-else:
-    data = {
-        'X': ptu.from_numpy(quad_params["default_init_state_np"][:13][None,:][None,:].astype(np.float32)),
-        'R': ref_tensor,
-    }
+    # Stack the references on top of each other.
+    ref_tensor = torch.cat(ref_sequence, axis=1)
 
-# load the data for the policy
-mlp_state_dict = torch.load(save_path)
-cl_system.nodes[2].load_state_dict(mlp_state_dict)
+    P = torch.concat([torch.tensor([[[4,4,4,-5]]])] * (nstep + 1), dim=1)
 
-# cl_system.nodes[0].callable.vel_sp_2_w_cmd.bs = data['X'].shape[1]
-# cl_system.nodes[0].callable.vel_sp_2_w_cmd.reset() 
-cl_system.nsteps = nstep
-output = cl_system(data)
-print("done")
+    if include_actuators:
+        data = {
+            'X': ptu.from_numpy(quad_params["default_init_state_np"][None,:][None,:].astype(np.float32)),
+            'R': ref_tensor,
+        }
+    else:
+        data = {
+            'X': ptu.from_numpy(quad_params["default_init_state_np"][:13][None,:][None,:].astype(np.float32)),
+            'R': ref_tensor,
+        }
 
-import matplotlib.pyplot as plt
-# plt.plot(data['X'][0,:,0:3].detach().cpu().numpy(), label=['x','y','z'])
-# plt.plot(data['R'][0,:,0:3].detach().cpu().numpy(), label=['x_ref','y_ref','z_ref'])
-# plt.legend()
-# plt.show()
+    # load the data for the policy
+    mlp_state_dict = torch.load(save_path)
+    cl_system.nodes[2].load_state_dict(mlp_state_dict)
 
-t = np.linspace(0, nstep*Ts, nstep)
-render_interval = 60
-animator = Animator(
-    states=ptu.to_numpy(output['X'].squeeze())[::render_interval,:], 
-    times=t[::render_interval], 
-    reference_history=ptu.to_numpy(output['R'].squeeze())[::render_interval,:], 
-    reference=R, 
-    reference_type='fig8', 
-    drawCylinder=False,
-    state_prediction=None
-)
-animator.animate() # does not contain plt.show()    
-plt.show()
+    # cl_system.nodes[0].callable.vel_sp_2_w_cmd.bs = data['X'].shape[1]
+    # cl_system.nodes[0].callable.vel_sp_2_w_cmd.reset() 
+    cl_system.nsteps = nstep
+    output = cl_system(data)
+    print("done")
 
-print('fin')
-# reset batch expectations of low level control
-# l_system.nodes[0].callable.vel_sp_2_w_cmd.bs = num_train_samples
-# l_system.nodes[0].callable.vel_sp_2_w_cmd.reset() 
+    import matplotlib.pyplot as plt
+    # plt.plot(data['X'][0,:,0:3].detach().cpu().numpy(), label=['x','y','z'])
+    # plt.plot(data['R'][0,:,0:3].detach().cpu().numpy(), label=['x_ref','y_ref','z_ref'])
+    # plt.legend()
+    # plt.show()
+
+    t = np.linspace(0, nstep*Ts, nstep)
+    render_interval = 60
+    animator = Animator(
+        states=ptu.to_numpy(output['X'].squeeze())[::render_interval,:], 
+        times=t[::render_interval], 
+        reference_history=ptu.to_numpy(output['R'].squeeze())[::render_interval,:], 
+        reference=R, 
+        reference_type='fig8', 
+        drawCylinder=False,
+        state_prediction=None
+    )
+    animator.animate() # does not contain plt.show()    
+    # plt.show()
+
+    print("saving the state and input histories...")
+    x_history = np.stack(ptu.to_numpy(output['X'].squeeze()))
+    u_history = np.stack(ptu.to_numpy(output['U'].squeeze()))
+
+    np.savez(
+        file = f"data/dpc_timehistories/xu_traj_mj_{str(Ts)}.npz",
+        x_history = x_history,
+        u_history = u_history
+    )
+
+    print('fin')
+    # reset batch expectations of low level control
+    # l_system.nodes[0].callable.vel_sp_2_w_cmd.bs = num_train_samples
+    # l_system.nodes[0].callable.vel_sp_2_w_cmd.reset() 
