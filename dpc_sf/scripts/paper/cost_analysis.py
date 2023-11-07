@@ -1,6 +1,6 @@
 import numpy as np
 from dpc_sf.dynamics.params import params as quad_params
-
+from dpc_sf.control.trajectory.trajectory import equation_reference, waypoint_reference
 # Calculate the MPC Cost For Trajectories
 # ---------------------------------------
 def calc_p2p_MPC_cost(x_history, u_history, Ti, Tf):
@@ -46,17 +46,44 @@ def calc_p2p_MPC_cost(x_history, u_history, Ti, Tf):
     print(f"cost is: {cost}")
 
 def generate_fig8_reference(Ti, Ts, Tf):
-    pass
+    ref = equation_reference(type='fig8', average_vel=1.0, Ts=Ts)
+    r = []
+    for t in np.arange(Ti, Tf, Ts):
+        r.append(ref(t))
+    return np.vstack(r)
+
+def generate_wp_p2p_reference(Ti, Ts, Tf):
+    ref = waypoint_reference(type='wp_p2p', average_vel=0.1)
+    r = []
+    for t in np.arange(Ti, Tf, Ts):
+        r.append(ref(t))
+    return np.vstack(r)
+
+def generate_wp_p2p_reference(Ti, Ts, Tf):
+    ref = waypoint_reference(type='wp_traj', average_vel=0.1)
+    r = []
+    for t in np.arange(Ti, Tf, Ts):
+        r.append(ref(t))
+    return np.vstack(r)
 
 dpc_save_dir = "data/dpc_timehistories/"
 mpc_save_dir = "data/mpc_timehistories/"
 
-
 files = [
+    # dpc_save_dir + "xu_fig8_mj_0.001.npz",
     dpc_save_dir + "xu_p2p_mj_0.001.npz",
     dpc_save_dir + "xu_traj_mj_0.001.npz",
-
     mpc_save_dir + "xu_fig8_mj_0.001.npz",
-    mpc_save_dir + "xu_traj_mj_0.001.npz"
+    mpc_save_dir + "xu_wp_p2p_mj_0.001.npz",
+    mpc_save_dir + "xu_wp_traj_mj_0.001.npz",
 ]
+
+for file in files:
+    data = np.load(file)
+    x, u = data['x_history'], data['u_history']
+    Ti = 0; Ts=0.001; Tf = 10.0
+    r = generate_fig8_reference(Ti, Ts, Tf)
+
+    print('fin')
+
 

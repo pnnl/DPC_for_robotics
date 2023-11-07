@@ -10,4 +10,5 @@ also ended up being pretty good from the MPC side
 
 # wp traj
 running it now with 3000 step, 3 second, 20 second sim, should take 44 hours if linear lol
+44:26:13
 
