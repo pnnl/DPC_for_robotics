@@ -4,33 +4,33 @@ with the extremely simple DPC trained on a 3 double integrator
 setup
 """
 
-# we probably want to learn a gain to apply to the DPC as it
-# was trained assuming a certain A and B matrix
-
 import torch
 import numpy as np
 
 from neuromancer.modules import blocks
 from neuromancer.system import Node, System
 
+from dpc_sf.utils import pytorch_utils as ptu
+
+if __name__ == "__main__":
+    
+    # torch.autograd.set_detect_anomaly(True)
+    torch.manual_seed(0)
+    np.random.seed(0)
+
 from dpc_sf.control.pi.pi import XYZ_Vel
 from dpc_sf.dynamics.params import params as quad_params
 from dpc_sf.dynamics.eom_dpc import QuadcopterDPC
-from dpc_sf.control.trajectory.trajectory import waypoint_reference
-from dpc_sf.utils import pytorch_utils as ptu
+from dpc_sf.control.trajectory.trajectory import equation_reference
 from dpc_sf.utils.animation import Animator
-
-from dpc_sf.control.dpc.operations import processP2PTrajPolicyInput
-
-
+from dpc_sf.control.dpc.operations import processFig8TrajPolicyInput
 
 class stateRefCat(torch.nn.Module):
     def __init__(self) -> None:
         super().__init__()
 
     def forward(self, x, r):
-        e = r - x
-        return e # torch.hstack([e,p])
+        return r - x
 
 class stateSelector(torch.nn.Module):
     def __init__(self, idx=[0,7,1,8,2,9]) -> None:
@@ -51,7 +51,7 @@ class stateSelector(torch.nn.Module):
 class mlpGain(torch.nn.Module):
     def __init__(
             self, 
-            gain= ptu.tensor([1.0,1.0,1.0])#torch.tensor([-0.1, -0.1, -0.01])
+            gain#torch.tensor([-0.1, -0.1, -0.01])
         ) -> None:
         super().__init__()
         self.gain = gain
@@ -62,19 +62,19 @@ class mlpGain(torch.nn.Module):
         print(f"gained u: {output}")
         return output
 
-def run_wp_traj(
+def run_dpc_fig8(
         Ts = 0.001,
         include_actuators = True,
         set_vel_zero = False, # dont set this true
         save_path = "data/policy/DPC_traj/policy.pth",
-        nstep = 20000,
-        average_vel = 0.5,
+        nstep = 10000,
+        average_vel = 1.0,
     ):
 
     state_selector = stateSelector()
     state_selector_node = Node(state_selector, ['X', 'R'], ['X_reduced', 'R_reduced'], name='state_selector')
 
-    state_ref_cat = processP2PTrajPolicyInput(use_error=True)
+    state_ref_cat = stateRefCat()
     state_ref_cat_node = Node(state_ref_cat, ['X_reduced', 'R_reduced'], ['Obs'])
 
     mlp = blocks.MLP(6, 3, bias=True,
@@ -83,7 +83,7 @@ def run_wp_traj(
                     hsizes=[20, 20, 20, 20]).to(ptu.device)
     mlp_node = Node(mlp, ['Obs'], ['xyz_thr'], name='mlp')
 
-    mlp_gain = mlpGain()
+    mlp_gain = mlpGain(gain = ptu.tensor([1.0,1.0,1.0]))
     mlp_gain_node = Node(mlp_gain, ['xyz_thr'], ['xyz_thr_gained'], name='gain')
 
     pi = XYZ_Vel(Ts=Ts, bs=1, input='xyz_thr', include_actuators=include_actuators)
@@ -104,7 +104,7 @@ def run_wp_traj(
     cl_system = System([state_selector_node, state_ref_cat_node, mlp_node, mlp_gain_node, pi_node, sys_node], nsteps=100)
 
     # the reference about which we generate data
-    R = waypoint_reference('wp_traj', average_vel=1.0, include_actuators=include_actuators)
+    R = equation_reference('fig8', average_vel=average_vel, include_actuators=include_actuators, set_vel_zero=set_vel_zero, Ts=Ts)
     # r = quad_params["default_init_state_np"]
 
     # test closed loop
@@ -126,12 +126,16 @@ def run_wp_traj(
         data = {
             'X': ptu.from_numpy(quad_params["default_init_state_np"][None,:][None,:].astype(np.float32)),
             'R': ref_tensor,
+            'P': P
         }
     else:
         data = {
             'X': ptu.from_numpy(quad_params["default_init_state_np"][:13][None,:][None,:].astype(np.float32)),
             'R': ref_tensor,
+            'Cyl': torch.concatenate([ptu.tensor([[[1,1]]])]*nstep, axis=1),
         }
+
+    data = {key: value.to(ptu.device) for key, value in data.items()}
 
     # load the data for the policy
     mlp_state_dict = torch.load(save_path)
@@ -140,7 +144,7 @@ def run_wp_traj(
     # cl_system.nodes[0].callable.vel_sp_2_w_cmd.bs = data['X'].shape[1]
     # cl_system.nodes[0].callable.vel_sp_2_w_cmd.reset() 
     cl_system.nsteps = nstep
-    output = cl_system(data)
+    data = cl_system(data)
     print("done")
 
     import matplotlib.pyplot as plt
@@ -152,31 +156,32 @@ def run_wp_traj(
     t = np.linspace(0, nstep*Ts, nstep)
     render_interval = 60
     animator = Animator(
-        states=ptu.to_numpy(output['X'].squeeze())[::render_interval,:], 
+        states=ptu.to_numpy(data['X'].squeeze())[::render_interval,:], 
         times=t[::render_interval], 
-        reference_history=ptu.to_numpy(output['R'].squeeze())[::render_interval,:], 
+        reference_history=ptu.to_numpy(data['R'].squeeze())[::render_interval,:], 
         reference=R, 
         reference_type='fig8', 
         drawCylinder=False,
-        state_prediction=None
+        state_prediction=None,
+        save_path="data/media"
     )
     animator.animate() # does not contain plt.show()    
     # plt.show()
 
     print("saving the state and input histories...")
-    x_history = np.stack(ptu.to_numpy(output['X'].squeeze()))
-    u_history = np.stack(ptu.to_numpy(output['U'].squeeze()))
+    x_history = np.stack(ptu.to_numpy(data['X'].squeeze()))
+    u_history = np.stack(ptu.to_numpy(data['U'].squeeze()))
 
     np.savez(
-        file = f"data/dpc_timehistories/xu_traj_mj_{str(Ts)}.npz",
+        file = f"data/dpc_timehistories/xu_fig8_mj_{str(Ts)}.npz",
         x_history = x_history,
         u_history = u_history
     )
 
-    print('fin')
     # reset batch expectations of low level control
     # l_system.nodes[0].callable.vel_sp_2_w_cmd.bs = num_train_samples
     # l_system.nodes[0].callable.vel_sp_2_w_cmd.reset() 
 
 if __name__ == "__main__":
-    run_wp_traj()
+
+    run_dpc_fig8(nstep=10000)

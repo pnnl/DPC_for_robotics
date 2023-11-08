@@ -1,6 +1,6 @@
 import torch
 
-device = torch.device('cuda:0')
+device = torch.device('cpu')
 dtype = torch.float32
 
 def init_gpu(use_gpu=True, gpu_id=0):
@@ -32,4 +32,4 @@ def tensor(list):
 def create_zeros(shape):
     return torch.zeros(shape).type(dtype).to(device)
 
-init_gpu(use_gpu=True)
+init_gpu(use_gpu=False)
