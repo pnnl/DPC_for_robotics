@@ -224,6 +224,9 @@ max_limit = np.max(np.abs(np.array(ax1.get_xlim() + ax1.get_ylim() + ax1.get_zli
 ax1.set_xlim(-1.2, 2.2)
 ax1.set_ylim(-1.2, 2.2)
 ax1.set_zlim(-2, 2)
+ax1.set_xlabel("X Axis")
+ax1.set_ylabel("Y Axis")
+ax1.set_zlabel("Z Axis")
 
 # Draw Cylinder manually
 draw_cylinder(ax1, x_center=1, y_center=1, z_center=0, radius=0.5, depth=2)  # depth=2 to draw a long cylinder
@@ -245,6 +248,8 @@ circle = Circle((1, 1), 0.5, fill=False, color='b', linestyle='dashed')
 ax2.add_patch(circle)
 ax2.scatter(2,2, color='red')
 ax2.grid()
+ax2.set_xlabel("X Axis")
+ax2.set_ylabel("Y Axis")
 
 # # Right y,z Front View Plot
 # ax3 = fig.add_subplot(133)
@@ -261,7 +266,7 @@ ax2.grid()
 # ax3.grid()
 
 plt.tight_layout()
-plt.savefig('test')
+plt.savefig('data/media/paper/many_p2p.svg')
 plt.show()
 
 reference_history = np.copy(quad_params["default_init_state_np"])
