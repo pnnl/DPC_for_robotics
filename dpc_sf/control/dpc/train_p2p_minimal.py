@@ -214,9 +214,34 @@ def train_wp_p2p(
 
 if __name__ == "__main__":
 
+    # best setup below for T1 desktop
+
     # torch.autograd.set_detect_anomaly(True)
     torch.manual_seed(0)
     np.random.seed(0)
     ptu.init_gpu(use_gpu=False)
 
-    train_wp_p2p()
+    import time
+
+    start_time = time.time()
+    train_wp_p2p(iterations=3, epochs=10, batch_size=5000)
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+
+    print(f"Training elapsed time: {elapsed_time}")
+
+    """ This worked rather well, slight z SSE remained
+    torch.manual_seed(0)
+    np.random.seed(0)
+    ptu.init_gpu(use_gpu=False)
+
+    import time
+
+    start_time = time.time()
+    train_wp_p2p(iterations=3, epochs=10, batch_size=5000)
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+
+    print(f"Training elapsed time: {elapsed_time}")
+    """
+

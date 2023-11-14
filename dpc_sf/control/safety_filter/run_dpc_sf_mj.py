@@ -22,19 +22,23 @@ from dpc_sf.utils import pytorch_utils as ptu
 from dpc_sf.utils.animation import Animator
 
 import casadi as ca
-import ml_casadi.torch as mc
 import dpc_sf.control.safety_filter.safetyfilternew as sf
+from dpc_sf.control.dpc.operations import posVel2cyl
 
 ## Options
 Ts = 0.001
 save_path = "data/policy/DPC_p2p/"
-policy_name = "policy_overtrain.pth"
+policy_name = "policy.pth"
 normalize = False
 include_actuators = True 
 backend = 'mj' # 'eom'
 use_backup = False
-nstep = 3000 # 600 * 5
+nstep = 3500 # 600 * 5
 use_integrator_policy = False
+
+gravity_offset = ptu.tensor([0,0,-quad_params["hover_thr"]]).unsqueeze(0)
+test_input = ptu.tensor([2.        ,  0.        ,  2.        ,  0.        ,  1.        ,
+        0.        ,  0.91421356, -0.70710678])
 
 mlp_state_dict = torch.load(save_path + policy_name)
 
@@ -44,9 +48,11 @@ class Cat(torch.nn.Module):
     def __init__(self) -> None:
         super().__init__()
 
-    def forward(self, *args):
+    def forward(self, x, r, c):
         # expects shape [bs, nx]
-        return torch.hstack(args)
+        e = r - x
+        c_pos, c_vel = posVel2cyl(x, c, radius=0.5)
+        return torch.hstack([e, c_pos, c_vel])
 
 class stateSelector(torch.nn.Module):
     def __init__(self, idx=[0,7,1,8,2,9]) -> None:
@@ -61,16 +67,16 @@ class stateSelector(torch.nn.Module):
         # print(f"selected_states: {x_reduced}")
         # print(f"selected_states: {r_reduced}")
         # print(f"dist2cyl: {}")
-        print(f'x = {str(x[0,0])}')
-        print(f'y = {str(x[0,1])}')
-        print(f'z = {str(x[0,2])}')
-        print(f'x_dot = {str(x[0,0+7])}')
-        print(f'y_dot = {str(x[0,1+7])}')
-        print(f'z_dot = {str(x[0,2+7])}')
+        # print(f'x = {str(x[0,0])}')
+        # print(f'y = {str(x[0,1])}')
+        # print(f'z = {str(x[0,2])}')
+        # print(f'x_dot = {str(x[0,0+7])}')
+        # print(f'y_dot = {str(x[0,1+7])}')
+        # print(f'z_dot = {str(x[0,2+7])}')
         dist2cyl = np.sqrt((x[0,0]-1)**2+(x[0,1]-1)**2) - 0.5
-        print(f'dist2cyl = {str(dist2cyl)}')
+        # print(f'dist2cyl = {str(dist2cyl)}')
         self.dist2cyl = min(dist2cyl, self.dist2cyl)
-        print(f'min dist2cyl: {self.dist2cyl}')
+        # print(f'min dist2cyl: {self.dist2cyl}')
         # clip selected states to be fed into the agent:
         x_reduced = torch.clip(x_reduced, min=torch.tensor(-3.), max=torch.tensor(3.))
         r_reduced = torch.clip(r_reduced, min=torch.tensor(-3.), max=torch.tensor(3.))
@@ -83,7 +89,7 @@ class mlpGain(torch.nn.Module):
         ) -> None:
         super().__init__()
         self.gain = gain
-        self.gravity_offset = ptu.create_tensor([0,0,-quad_params["hover_thr"]]).unsqueeze(0)
+        self.gravity_offset = ptu.tensor([0,0,-quad_params["hover_thr"]]).unsqueeze(0)
     def forward(self, u):
         """literally apply gain to the output"""
         output = u * self.gain + self.gravity_offset
@@ -96,7 +102,7 @@ class Policy:
 
         # CasADI Setup Policy
         # -------------------
-        self.mlp = blocks.MLP(6*2 + 2, 3, bias=True,
+        self.mlp = blocks.MLP(6 + 2, 3, bias=True,
                 linear_map=torch.nn.Linear,
                 nonlin=torch.nn.ReLU,
                 hsizes=[20, 20, 20, 20])
@@ -105,7 +111,7 @@ class Policy:
 
         self.pi = XYZ_Vel(Ts=Ts, bs=1, input='xyz_thr', include_actuators=include_actuators)
 
-        self.gravity_offset = ptu.create_tensor([0,0,-quad_params["hover_thr"]]).unsqueeze(0)
+        self.gravity_offset = ptu.tensor([0,0,-quad_params["hover_thr"]]).unsqueeze(0)
 
     def evaluate(self, xrc_reduced, x):
         xyz_thr_sp = self.mlp(xrc_reduced) + self.gravity_offset
@@ -136,7 +142,7 @@ class safetyFilterNM(torch.nn.Module):
 
         # instantiate the dynamics
         # ------------------------
-        quad = QuadcopterCA()
+        quad = QuadcopterCA(params=quad_params)
         dt = Ts
         nx = 17
         def f(x, t, u):
@@ -260,25 +266,31 @@ class safetyFilterNM(torch.nn.Module):
 
     def get_xrc_reduced(self, x):
 
-        state_idx = [0,7,1,8,2,9]
-        x_reduced = x[state_idx]
-        r_reduced = self.xr[state_idx]
-        cyl = np.array([1,1])
-        return np.hstack([x_reduced, r_reduced, cyl])
+        # state_idx = [0,7,1,8,2,9]
+        # x_test = x[state_idx]
+        # r_test = self.xr[state_idx]
+        x_reduced, r_reduced = state_selector(ptu.from_numpy(x[None,:]), ptu.from_numpy(self.xr[None,:]))
+        cyl = np.array([[1,1]])
+        c_pos, c_vel = posVel2cyl(x[None,:], cyl, radius=0.5)
+        return np.hstack([r_reduced - x_reduced, c_pos, c_vel]).squeeze()
 
     def unom(self, x, k):
+
         if type(x) is ca.DM:
             x = np.array(x.full())[:,0]
+
         xrc_reduced = self.get_xrc_reduced(x)
-        switch_z = False
+
+        switch_z = False # keep False John
         if switch_z is True:
             xrc_reduced[4:6] *= -1
+
         # switch to pytorch
         xrc_reduced_pt = ptu.from_numpy(xrc_reduced).unsqueeze(0)
         x_pt = ptu.from_numpy(x).unsqueeze(0)
-        u_pt = self.policy.evaluate(xrc_reduced_pt, x_pt).squeeze()
-        return ptu.to_numpy(u_pt)[:,None]
 
+        u_pt = node_policy(x_pt, ptu.from_numpy(self.xr).unsqueeze(0)) # self.policy.evaluate(xrc_reduced_pt, x_pt).squeeze()
+        return ptu.to_numpy(u_pt)[:,None]
 
 
 ### Nodes:
@@ -292,7 +304,7 @@ state_ref_cat = Cat()
 state_ref_cat_node = Node(state_ref_cat, ['X_reduced', 'R_reduced', 'Cyl'], ['XRC_reduced'], name='cat')
 node_list.append(state_ref_cat_node)
 
-mlp = blocks.MLP(6*2 + 2, 3, bias=True,
+mlp = blocks.MLP(6 + 2, 3, bias=True,
                 linear_map=torch.nn.Linear,
                 nonlin=torch.nn.ReLU,
                 hsizes=[20, 20, 20, 20])
@@ -306,6 +318,15 @@ node_list.append(mlp_gain_node)
 pi = XYZ_Vel(Ts=Ts, bs=1, input='xyz_thr', include_actuators=include_actuators)
 pi_node = Node(pi, ['X', 'xyz_thr_gained'], ['U'], name='pi_control')
 node_list.append(pi_node)
+
+def node_policy(x, r):
+    # the error lay in here somewhere ==================
+    x_r, r_r = state_selector(x, r)
+    ec = state_ref_cat(x_r, r_r, ptu.tensor([[1.,1.]]))
+    # ==================================================
+    sp = mlp(ec) + gravity_offset
+    u = pi(x, sp)
+    return u.squeeze()
 
 filter = safetyFilterNM(mlp_state_dict=mlp_state_dict)
 filter_node = Node(filter, ['X'], ['U_filtered'])
@@ -335,17 +356,20 @@ cl_system = System(node_list, nsteps=nstep)
 
 # Here we need only produce one starting point from which to conduct a rollout.
 if include_actuators:
+    X = ptu.from_numpy(quad_params["default_init_state_np"][None,:][None,:].astype(np.float32))
+    X[:,:,7] += 1.5 # some adversarial initial conditions
+    X[:,:,8] += 1.5 # some adversarial initial conditions
     data = {
-        'X': ptu.from_numpy(quad_params["default_init_state_np"][None,:][None,:].astype(np.float32)),
+        'X': X,
         'R': torch.concatenate([ptu.from_numpy(R(1)[None,:][None,:].astype(np.float32))]*nstep, axis=1),
-        'Cyl': torch.concatenate([ptu.create_tensor([[[1,1]]])]*nstep, axis=1),
+        'Cyl': torch.concatenate([ptu.tensor([[[1,1]]])]*nstep, axis=1),
         'I_err': ptu.create_zeros([1,1,3])
     }
 else:
     data = {
         'X': ptu.from_numpy(quad_params["default_init_state_np"][:13][None,:][None,:].astype(np.float32)),
         'R': torch.concatenate([ptu.from_numpy(R(1)[None,:][None,:].astype(np.float32))]*nstep, axis=1),
-        'Cyl': torch.concatenate([ptu.create_tensor([[[1,1]]])]*nstep, axis=1),
+        'Cyl': torch.concatenate([ptu.tensor([[[1,1]]])]*nstep, axis=1),
         'I_err': ptu.create_zeros([1,1,3])
     }
 
@@ -353,11 +377,21 @@ else:
 # load the data for the policy
 cl_system.nodes[2].load_state_dict(mlp_state_dict)
 
-
 ## Perform CLP Simulation
 cl_system.nsteps = nstep
-cl_system(data)
+cl_system.nodes[6].callable.mj_reset(data['X'].squeeze().squeeze())
+data = cl_system(data)
 print("done")
+
+print("saving the state and input histories...")
+x_history = np.stack(ptu.to_numpy(data['X'].squeeze()))
+u_history = np.stack(ptu.to_numpy(data['U_filtered'].squeeze()))
+
+np.savez(
+    file = f"data/sf_timehistories/xu_sf_p2p_mj_{str(Ts)}.npz",
+    x_history = x_history,
+    u_history = u_history
+)
 
 plt.plot(data['X'][0,:,0:3].detach().cpu().numpy(), label=['x','y','z'])
 plt.plot(data['R'][0,:,0:3].detach().cpu().numpy(), label=['x_ref','y_ref','z_ref'])
@@ -376,6 +410,6 @@ animator = Animator(
     state_prediction=None
 )
 animator.animate() # does not contain plt.show()    
-plt.show()
+# plt.show()
 
-
+print('fin')

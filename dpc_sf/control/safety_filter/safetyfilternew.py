@@ -349,7 +349,6 @@ class SafetyFilter():
         elif type(x0) is DM:
             self.quad.reset(x0.full()[:,0])
             x = np.copy(x0.full()[:,0])
-
         else:
             raise Exception(f"unexpected input type: {type(x0)}")
 
@@ -364,6 +363,8 @@ class SafetyFilter():
 
         lb = quad_params["state_lb"]
         ub = quad_params["state_ub"]
+
+        # return True, x_pred, u_pred
 
         for i, x in enumerate(x_pred):
             if not np.all(x[:13] >= lb[:13]) or not np.all(x[:13] <= ub[:13]):

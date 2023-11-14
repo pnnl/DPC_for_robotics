@@ -132,7 +132,7 @@ def run_dpc_p2p(
 
     print(f"generating new data")
     # load pretrained policy
-    mlp_state_dict = torch.load(save_path)
+    mlp_state_dict = torch.load(save_path + policy_name)
     # apply pretrained policy
     cl_system.nodes[1].load_state_dict(mlp_state_dict)
     # reset simulation to correct initial conditions
@@ -151,4 +151,10 @@ def run_dpc_p2p(
         u_history = u_history
     )
 
+    
 
+
+if __name__ == "__main__":
+    torch.manual_seed(0)
+    np.random.seed(0)
+    run_dpc_p2p()

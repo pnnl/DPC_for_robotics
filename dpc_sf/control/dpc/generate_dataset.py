@@ -148,7 +148,9 @@ class DatasetGenerator:
         # if generate with uniform dist
         # angles = 2 * torch.pi * torch.rand(n)  # uniform angles between [0, 2π]
         # if generate with normal dist
-        angles = torch.normal(mean=torch.tensor(1.25*torch.pi), std=torch.tensor(1), size=(n,))# (2 * torch.pi * torch.randn(n)) + 0.75 * torch.pi
+        
+        # std was 1 previously
+        angles = torch.normal(mean=torch.tensor(1.25*torch.pi), std=torch.tensor(2), size=(n,))# (2 * torch.pi * torch.randn(n)) + 0.75 * torch.pi
 
         # Convert polar to Cartesian coordinates
         x = cylinder_radius * torch.cos(angles) + cylinder_center[0]

@@ -9,7 +9,6 @@ from casadi import *
 import numpy as np
 from tqdm import tqdm
 import traceback
-import gc
 from dpc_sf.dynamics.eom_pt import QuadcopterPT
 from dpc_sf.dynamics.eom_ca import QuadcopterCA
 
@@ -298,25 +297,6 @@ class SafetyFilter:
             for k in range(self.N):  # loop over control intervals (these are the equality constraints associated with the dynamics)
                 x_next = self.f(X[:, k], 0, U[:, k])
                 opt.subject_to(X[:, k + 1] == x_next)  # close the gaps
-
-    def define_constraints(self, X, U, opt, x0, k0=0, Xi=None, XiN=None):
-        '''Defines the system constraints, i.e, state and input constraints on the system
-        X: system state
-        U: system input
-        opt: Casadi optimization class
-        x0: initial state
-        k0: initial time step
-        Xi: optional slack terms for the system constraints
-        XiN: optional slack term for terminal constraint'''
-
-        # Terminal constraint, enforced at last time step
-        opt.subject_to(self.hf(X[:, -1]) <= XiN - self.rob_marg_term)
-
-        # Input constraints
-        for ii in range(self.ncu):
-            for kk in range(self.N):
-                opt.subject_to(self.input_constraints[ii](U[:, kk]) <= 0.0)
-
 
 if __name__ == "__main__":
     # the code below has been combined with the old safety filter code to have a better test structure :)

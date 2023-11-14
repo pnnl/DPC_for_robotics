@@ -360,6 +360,10 @@ class QuadcopterPT:
         self.reference_history = []
         self.input_history = []
 
+    def __call__(self, _, cmd):
+        self.step(cmd)
+        state = self.get_state()
+        return state
 
     def step(
             self, 
