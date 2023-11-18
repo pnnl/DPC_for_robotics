@@ -11,6 +11,8 @@ from dpc import posVel2cyl
 from utils.integrate import euler, RK4
 from dynamics import get_quad_params, mujoco_quad, state_dot
 from pid import get_ctrl_params, PID
+import reference
+from utils.quad import Animator
 
 class SafetyFilter:
     def __init__(self, x0, f, params, constraints, options=None):
@@ -112,6 +114,7 @@ class SafetyFilter:
         self.XiN = self.opti.parameter()
 
 
+
     def setup_constraints(self, k0=0):
         '''Set up constraints
          k0: initial time
@@ -147,6 +150,7 @@ class SafetyFilter:
                         # "acceptable_dual_inf_tol": 1e-8,
                         # "acceptable_compl_inf_tol": 1e-8,
                         }
+
 
     def dynamics_constraints(self, X, U, opt, k0=0):
         '''Defines the constraints related to the ode of the system dynamics
@@ -193,6 +197,7 @@ class SafetyFilter:
             for kk in range(self.N):
                 opt.subject_to(self.input_constraints[ii](U[:, kk]) <= 0.0)
 
+
     def define_constraints_1step(self, X, U, opt, x0, k0=0, XiN=None):
         '''Defines the system constraints, i.e, state and input constraints on the system
         X: system state
@@ -215,6 +220,7 @@ class SafetyFilter:
         for ii in range(self.ncu):
             opt.subject_to(self.input_constraints[ii](U) <= 0.0)
 
+
     def check_constraint_satisfaction(self, unom, x0, k0=0):
         '''Check if constraints are satisfied for the future trajectory for given nominal control
          at the state x0 at time k0
@@ -224,12 +230,12 @@ class SafetyFilter:
          '''
 
         # Loop over control intervals (these are the equality constraints associated with the dynamics)
-        x = x0
+        x = x0.T
         for k in range(self.N):
 
             # Integrate system
             try:
-                u = unom(x, k + k0)
+                u = unom(x.T, k + k0)
             except:
                 return 1, 'unom evaluation failed'
             x = self.integrator(self.f, x, k0 + k, u, self.dT)
@@ -261,6 +267,7 @@ class SafetyFilter:
 
         return 0, 'no_violation'
 
+
     def check_constraint_satisfaction_1step(self, unom, x0, k0=0):
         '''Check if constraints are satisfied for the 1 step look ahead for given nominal control
          at the state x0 at time k0
@@ -283,6 +290,7 @@ class SafetyFilter:
         else:
             return 1, 'terminal_contraint_violation'
 
+
     def compute_robust_margin(self, kk):
         '''Given dictionary of robustness margin terms, compute the robustness margin
         kk: Current time step
@@ -292,10 +300,12 @@ class SafetyFilter:
         else:
             return 0.0
 
+
     def compute_robust_margin_terminal(self):
         '''Given dictionary of robustness margin terms, compute the robustness margin for the terminal constraint
         '''
         return self.rob_marg['Lhf_x']*self.rob_marg['Ld']*self.rob_marg['Lf_x']**(self.N-1)
+
 
     def compute_control_step(self, unom, x, k):
         ''' Compute the safety filter and output the control for the next time instant
@@ -314,7 +324,7 @@ class SafetyFilter:
             self.events.append(event[0])
             self.events_log[k] = event[1]
             if not event[0]:
-                return unom(x, k)
+                return unom(x, k)[:,0]
 
         # Set up the optimization variables, constraints for the current state and time step
         # if the system is time-varying
@@ -337,7 +347,8 @@ class SafetyFilter:
         except:
             print('initialized, no dual variables')
 
-        return np.array(sol.value(self.U[:,0])).reshape((self.nu,1))
+        return np.array(sol.value(self.U[:,0])).reshape((self.nu,1))[:,0]
+
 
     def solve_safety_filter(self, unom, x0, k0=0):
         '''Solve the safety filter optimization problem
@@ -398,6 +409,7 @@ class SafetyFilter:
                 return self.opti.debug, Xi_sol, XiN_sol
             if self.N ==1 :
                 return self.opti.debug, XiN_sol
+
 
 
     def solve_feasibility(self):
@@ -463,7 +475,7 @@ def get_sf_params(N_pred, Tf_hzn, Ts, quad_params, integrator):
     quad = state_dot.casadi
     dt = Ts
     nx = 17
-    f = lambda x, t, u: state_dot.casadi(x, u, params=quad_params)
+    f = lambda x, t, u: state_dot.casadi_vectorized(x, u, params=quad_params)
 
     # disturbance on the input
     # ------------------------
@@ -575,10 +587,31 @@ def get_nominal_control_system_nodes(quad_params, ctrl_params, Ts):
 
     return nominal_control_node_list
 
-class UNominal(torch.nn.Module):
-    def __init__(self) -> None:
-        get_nominal_control_system_nodes()
 
+class UNominal(torch.nn.Module):
+
+    def __init__(self, quad_params, ctrl_params, Ts, r, c) -> None:
+        super().__init__()
+        node_list = get_nominal_control_system_nodes(quad_params, ctrl_params, Ts)
+        self.control_system = nm.system.System(node_list, nsteps=1)
+        self.r = r
+        self.c = c
+
+    def sync(self, pid):
+        """
+        The PID created for the low level control is stateful - the integrator, and some old
+        values are retained for subsequent calculations. Therefore when using this control for
+        testing the nominal control, we must reset the nominal control with the current state
+        before every prediction rollout.
+        """
+
+        self.control_system.nodes[3].callable.reset()
+
+    def forward(self, x, k):
+        """
+        Conduct a single inference
+        """
+        return ptu.to_numpy(self.control_system.forward({'X':ptu.from_numpy(x).unsqueeze(0), 'R':self.r, 'Cyl':self.c}, retain_grad=False, print_loop=False)['U'][0]).T
 
 
 def run_wp_p2p(
@@ -592,18 +625,16 @@ def run_wp_p2p(
     times = np.arange(Ti, Tf, Ts)
     nsteps = len(times)
     quad_params = get_quad_params()
+    ctrl_params = get_ctrl_params()
     safety_filter = SafetyFilter(*get_sf_params(N_pred, Tf_hzn, Ts, quad_params, integrator))
+    R = reference.waypoint('wp_p2p', average_vel=1.0)
+    unom = UNominal(get_quad_params(), get_ctrl_params(), Ts, r=ptu.from_numpy(R(1)).unsqueeze(0).unsqueeze(0), c=ptu.tensor([[[1,1]]]))
 
-    node_list = get_nominal_control_system_nodes(get_quad_params(), get_ctrl_params(), Ts)
-    node_list_predictive = get_nominal_control_system_nodes(get_quad_params(), get_ctrl_params(), Ts)
+    node_list = get_nominal_control_system_nodes(quad_params, ctrl_params, Ts)
 
-    sys_predictive = integrators.Euler(state_dot.pytorch_vectorized, h=torch.tensor(Ts))
-    sys_node_predictive = nm.system.Node(sys_predictive, input_keys=['X', 'U'], output_keys=['X'])
-    node_list_predictive.append(sys_node_predictive)
-
-    cl_system_predictive = nm.system.System(node_list_predictive, nsteps=N_pred)
-
-
+    filter = lambda x: ptu.from_numpy(safety_filter.compute_control_step(unom, ptu.to_numpy(x), 0)).unsqueeze(0)
+    filter_node = nm.system.Node(filter, input_keys=['X'], output_keys=['U_filtered'], name='dynamics')
+    node_list.append(filter_node)
 
     sys = mujoco_quad(state=quad_params["default_init_state_np"], quad_params=quad_params, Ti=Ti, Tf=Tf, Ts=Ts, integrator=integrator)
     sys_node = nm.system.Node(sys, input_keys=['X', 'U_filtered'], output_keys=['X'], name='dynamics')
@@ -614,16 +645,42 @@ def run_wp_p2p(
     # load the pretrained policies
     mlp_state_dict = torch.load(policy_save_path + 'wp_p2p_policy.pth')
     cl_system.nodes[1].load_state_dict(mlp_state_dict)
-    cl_system_predictive.nodes[1].load_state_dict(mlp_state_dict)
 
+    X = ptu.from_numpy(quad_params["default_init_state_np"][None,:][None,:].astype(np.float32))
+    data = {
+        'X': X,
+        'R': torch.concatenate([ptu.from_numpy(R(1)[None,:][None,:].astype(np.float32))]*nsteps, axis=1),
+        'Cyl': torch.concatenate([ptu.tensor([[[1,1]]])]*nsteps, axis=1),
+    }
 
+    # set the mujoco simulation to the correct initial conditions
+    cl_system.nodes[5].callable.set_state(ptu.to_numpy(data['X'].squeeze().squeeze()))
+
+    # Perform CLP Simulation
+    output = cl_system.forward(data, retain_grad=False, print_loop=True)
+
+    # save
+    print("saving the state and input histories...")
+    x_history = np.stack(ptu.to_numpy(output['X'].squeeze()))
+    u_history = np.stack(ptu.to_numpy(output['U'].squeeze()))
+    r_history = np.stack(ptu.to_numpy(output['R'].squeeze()))
+
+    np.savez(
+        file = f"data/xu_fig8_mj_{str(Ts)}.npz",
+        x_history = x_history,
+        u_history = u_history,
+        r_history = r_history
+    )
+
+    animator = Animator(x_history, times, r_history, max_frames=500, save_path=media_save_path, state_prediction=None, drawCylinder=True)
+    animator.animate()
 
     print('fin')
 
 if __name__ == "__main__":
 
     ptu.init_dtype()
-    ptu.init_gpu()
+    ptu.init_gpu(use_gpu=False)
 
     Ti, Tf, Ts = 0.0, 3.5, 0.001
     N_pred = 30

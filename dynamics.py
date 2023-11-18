@@ -422,9 +422,9 @@ class state_dot:
         # Import params to numpy for CasADI
         # ---------------------------
         IB = params["IB"]
-        IBxx = ptu.to_numpy(IB[0, 0])
-        IByy = ptu.to_numpy(IB[1, 1])
-        IBzz = ptu.to_numpy(IB[2, 2])
+        IBxx = IB[0, 0]
+        IByy = IB[1, 1]
+        IBzz = IB[2, 2]
 
         # Unpack state tensor for readability
         # ---------------------------
