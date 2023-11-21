@@ -244,7 +244,7 @@ if __name__ == "__main__":
     import reference
     import utils.pytorch as ptu
     from dynamics import get_quad_params, state_dot
-    from utils.integrate import euler, RK4
+    from utils.integrate import euler, RK4, generate_variable_timesteps, generate_variable_times
     from utils.quad import Animator
 
     ptu.init_dtype()
@@ -260,16 +260,13 @@ if __name__ == "__main__":
     integrator = "euler"
     obstacle_opts = None # {'r': 0.5, 'x': 1, 'y': 1}
 
-    # Find the optimal dts for the MPC
-    dt_1 = Ts
-    d = (2 * (Tf_hzn/N) - 2 * dt_1) / (N - 1)
-    dts_init = [dt_1 + i * d for i in range(N)]
+    dts = generate_variable_timesteps(Ts, Tf_hzn, N)
 
     # reference = waypoint_reference('wp_p2p', average_vel=0.1, set_vel_zero=False)
     ref = reference.waypoint('wp_traj', average_vel=1.0, set_vel_zero=False)
 
     state = quad_params["default_init_state_np"]
-    ctrl = MPC(N, Ts, Tf_hzn, dts_init, state_dot.casadi, quad_params, integrator, obstacle_opts)
+    ctrl = MPC(N, Ts, Tf_hzn, dts, state_dot.casadi, quad_params, integrator, obstacle_opts)
     ctrl_pred_x = []
     memory = {'state': [state], 'cmd': [np.zeros(4)]}
     true_times = np.arange(Ti, Tf, Ts)
@@ -281,13 +278,8 @@ if __name__ == "__main__":
         # r = np.vstack([reference(quad.t)]*(N+1)).T
 
         # for wp_traj (only constant dts)
-        def compute_times(t_start, timesteps):
-            times = [t_start]
-            for dt in timesteps:
-                times.append(times[-1] + dt)
-            return np.array(times)  # Exclude the starting time
 
-        times = compute_times(t, dts_init)
+        times = generate_variable_times(t, dts)
         r = np.vstack([ref(time) for time in times]).T
         cmd = ctrl(state, r)
         state = euler.time_invariant.numpy(state_dot.numpy, state, cmd, Ts, quad_params)

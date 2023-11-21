@@ -203,26 +203,32 @@ class PID(torch.nn.Module):
         if w_cmd.isnan().any():
             print('fin')
 
+        pid_x = self.get_pid_x()
+
         if self.include_actuators:
             # find the command to achieve the desired w in the next timestep
             w = x[:,13:17]
             u = self.w_control(w=w, w_cmd=w_cmd)
-            return u
+            return u, pid_x
         else:
             # 
-            return w_cmd
+            return w_cmd, pid_x
+        
+    def get_pid_x(self):
+        return torch.cat([self.thr_int, self.vel_old, self.omega_old], dim=1)
+        # return {'thr_int': self.thr_int, 'vel_old': self.vel_old, 'omega_old': self.omega_old}
     
-    def reset(self, thr_int=None, vel_old=None, omega_old=None):
-        if any([thr_int, vel_old, omega_old]) is None:
+    def reset(self, pid_x):
+        if pid_x is None:
             # call to reset integrators and states and whatnot
             self.thr_int = ptu.zeros([self.bs, 3])
             self.vel_old = ptu.zeros([self.bs, 3])
             self.omega_old = ptu.zeros([self.bs, 3])
 
         else:
-            self.thr_int = thr_int
-            self.vel_old = vel_old
-            self.omega_old = omega_old
+            self.thr_int = pid_x[:,:3]
+            self.vel_old = pid_x[:,3:6]
+            self.omega_old = pid_x[:,6:]
 
     def saturate_vel_batched(self, vel_sp):
         # UNTESTED
