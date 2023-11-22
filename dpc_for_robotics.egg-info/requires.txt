@@ -1,6 +1,0 @@
-casadi
-neuromancer
-matplotlib
-mujoco
-tqdm
-imageio

@@ -1,6 +1,0 @@
-setup.py
-dpc_for_robotics.egg-info/PKG-INFO
-dpc_for_robotics.egg-info/SOURCES.txt
-dpc_for_robotics.egg-info/dependency_links.txt
-dpc_for_robotics.egg-info/requires.txt
-dpc_for_robotics.egg-info/top_level.txt
