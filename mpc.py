@@ -282,7 +282,7 @@ if __name__ == "__main__":
         times = generate_variable_times(t, dts)
         r = np.vstack([ref(time) for time in times]).T
         cmd = ctrl(state, r)
-        state = euler.time_invariant.numpy(state_dot.numpy, state, cmd, Ts, quad_params)
+        state = euler.numpy(state_dot.numpy, state, cmd, Ts, quad_params)
 
         ctrl_predictions = ctrl.get_predictions()
         ctrl_pred_x.append(ctrl_predictions[0])

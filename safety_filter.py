@@ -219,78 +219,6 @@ class SafetyFilter:
             opt.subject_to(self.input_constraints[ii](U) <= 0.0)
 
 
-    def check_constraint_satisfaction(self, unom, x0, k0=0):
-        '''Check if constraints are satisfied for the future trajectory for given nominal control
-         at the state x0 at time k0
-         unom: function nominal control, unom(x,k)
-         x0: initial state
-         k0: initial time
-         '''
-
-        # Loop over control intervals (these are the equality constraints associated with the dynamics)
-        x = x0.T
-        for k in range(self.N):
-
-            # Integrate system
-            u = unom(x.T, k + k0)
-            try:
-                u = unom(x.T, k + k0)
-            except:
-                return 1, 'unom evaluation failed'
-            x = self.integrator(self.f, x, k0 + k, u, self.dT)
-
-            # Check input constraints
-            for iu in range(self.ncu):
-                check_input = self.input_constraints[iu](np.array(u).reshape(self.nu,1))
-                if check_input > 0.0:
-                    return 1, 'input_constraint_violation'
-
-            # Check state constraints (TO DO: add a check before the for loop to check initial condition is in safe set)
-            for ic in range(self.nc):
-                rob_marg = self.compute_robust_margin(k)
-                check_states = self.state_constraints[ic](x, k + k0) + rob_marg
-                # Element-wise comparison with 0.0
-                comparison = check_states > 0.0
-
-                # Sum the boolean values (True is treated as 1, False as 0)
-                sum_comparison = ca.sum1(comparison)
-
-                if sum_comparison > 0.0:
-                    return 1, 'state_constraint_violation'
-
-        # Check terminal constraint
-        rob_marg_term = self.compute_robust_margin_terminal()
-        check_term = self.hf(x, k + k0 + 1.0) + rob_marg_term
-        if check_term > 0.0:
-            print("terminal constraint violated, ignoring...")
-            # return 1, 'terminal_constraint_violation'
-
-        return 0, 'no_violation'
-
-
-    def check_constraint_satisfaction_1step(self, unom, x0, k0=0):
-        '''Check if constraints are satisfied for the 1 step look ahead for given nominal control
-         at the state x0 at time k0
-         unom: function nominal control, unom(x,k)
-         x0: initial state
-         k0: initial time
-         '''
-
-        # Check input constraints
-        for iu in range(self.ncu):
-            u = unom(x0, k0)
-            check_input = self.input_constraints[iu](np.array(u).reshape(self.nu,1))
-            if check_input > 0.0:
-                return 1, 'input_constraint_violation'
-
-        # Check event condition
-        hf = self.hf(x0, k0)
-        if hf < -self.rob_marg['a']:
-            return 0, 'no_violation'
-        else:
-            return 1, 'terminal_contraint_violation'
-
-
     def compute_robust_margin(self, kk):
         '''Given dictionary of robustness margin terms, compute the robustness margin
         kk: Current time step
@@ -307,7 +235,7 @@ class SafetyFilter:
         return self.rob_marg['Lhf_x']*self.rob_marg['Ld']*self.rob_marg['Lf_x']**(self.N-1)
 
 
-    def compute_control_step2(self, u_seq, x_seq, k, constraints_satisfied):
+    def compute_control_step(self, u_seq, x_seq, k, constraints_satisfied):
 
         if self.options['event-trigger'] and constraints_satisfied:
             # Save solution for warm start
@@ -337,48 +265,6 @@ class SafetyFilter:
                 print('initialized, no dual variables')
 
             return np.array(sol.value(self.U[:,0])).reshape((self.nu,1))[:,0]
-
-    def compute_control_step(self, unom, x, k):
-        ''' Compute the safety filter and output the control for the next time instant
-        unom: Given nominal control to be implemented at current time if constraints are satisfied
-        unom: nominal control unom(x,k)
-        x: current state
-        k: current time step
-        '''
-
-        # Check event-triggering, if no event triggered, return unom(x,k)
-        if self.options['event-trigger']:
-            if self.N > 1:
-                event = self.check_constraint_satisfaction(unom, x, k)
-            if self.N == 1:
-                event = self.check_constraint_satisfaction_1step(unom, x, k)
-            self.events.append(event[0])
-            self.events_log[k] = event[1]
-            if not event[0]:
-                return unom(x, k)[:,0]
-
-        # Set up the optimization variables, constraints for the current state and time step
-        # if the system is time-varying
-        if self.options['time-varying']:
-            self.setup_opt_variables()
-            self.setup_constraints(k0=k)
-
-        # Set values to initial condition parameters
-        self.opti_feas.set_value(self.X0_f, x)
-        self.opti.set_value(self.X0, x)
-
-        # Solve the safety filter, only take the optimal control trajectory, and return the first instance of the control trajectory
-        sol = self.solve_safety_filter(unom, x, k)[0]
-
-        # Save solution for warm start
-        self.X_warm = sol.value(self.X)
-        self.U_warm = sol.value(self.U)
-        try:
-            self.lamg_warm = sol.value(self.opti.lam_g)
-        except:
-            print('initialized, no dual variables')
-
-        return np.array(sol.value(self.U[:,0])).reshape((self.nu,1))[:,0]
 
 
     def solve_safety_filter(self, unom, x0, k0=0):
@@ -418,7 +304,7 @@ class SafetyFilter:
         if self.N > 1:
             self.opti.set_value(self.Xi, Xi_sol)
         self.opti.set_value(self.XiN, XiN_sol)
-        self.opti.minimize(ca.dot(self.U[:, 0] - unom[:,0],self.U[:, 0] - unom[:,0] ))
+        self.opti.minimize(ca.dot(self.U[:, 0] - unom[:,0],self.U[:, 0] - unom[:,0]))
 
         # Warm start the optimization
         self.opti.set_initial(self.X, self.Xf_warm)
@@ -467,32 +353,6 @@ class SafetyFilter:
         self.opti_feas.solver("ipopt", self.p_opts, self.s_opts)  # set numerical backend
 
         return self.opti_feas.solve()
-
-
-    def open_loop_rollout(self, unom, x0, k0=0):
-        '''Solve the safety filter problem and return the entire predicted state and control trajectories
-        unom: Given nominal control to be implemented at current time if constraints are satisfied
-        unom: nominal control unom(x,k)
-        x0: initial state
-        k0: initial time step
-        '''
-
-        # Set values to initial condition parameters
-        self.opti_feas.set_value(self.X0_f, x0)
-        self.opti.set_value(self.X0, x0)
-        if self.N > 1:
-            sol, Xi_sol, XiN_sol = self.solve_safety_filter(unom, x0, k0)
-            return sol.value(self.X), sol.value(self.U), Xi_sol, XiN_sol
-
-        if self.N == 1:
-            sol, XiN_sol = self.solve_safety_filter(unom, x0, k0)
-            return sol.value(self.X), sol.value(self.U), XiN_sol
-
-
-    def clear_events(self):
-        '''Clear event logs'''
-        self.events = []
-        self.events_log = {}
 
 
 def get_sf_params(N_pred, Tf_hzn, Ts, quad_params, integrator):
@@ -597,6 +457,12 @@ def get_nominal_control_system_nodes(quad_params, ctrl_params, Ts):
     def process_policy_input(x, r, c, radius=0.5):
         idx = [0,7,1,8,2,9]
         x_r, r_r = x[:, idx], r[:, idx]
+        # if position inside cylinder, project to the surface because DPC not trained inside cylinder
+        # distance = torch.sqrt((x_r[:,0] - c[:,0])**2 + (x_r[:,1] - c[:,1])**2)
+        # if distance < radius:
+        #     scale = radius / distance
+        #     x_r[:,0] = c[:,0] + (x_r[:,0] - c[:,0]) * scale
+        #     x_r[:,1] = c[:,1] + (x_r[:,1] - c[:,1]) * scale
         x_r = torch.clip(x_r, min=ptu.tensor(-3.), max=ptu.tensor(3.))
         r_r = torch.clip(r_r, min=ptu.tensor(-3.), max=ptu.tensor(3.))
         c_pos, c_vel = posVel2cyl(x_r, c, radius)
@@ -634,16 +500,13 @@ class Predictor(torch.nn.Module):
 
         node_list = get_nominal_control_system_nodes(quad_params, ctrl_params, Ts)
 
-        predictive_dynamics = lambda x, u, k: (euler.time_invariant.pytorch(state_dot.pytorch_vectorized, x, u, dts[torch.round(k).long()], quad_params), k+1)
+        predictive_dynamics = lambda x, u, k: (euler.pytorch(state_dot.pytorch_vectorized, x, u, dts[torch.round(k).long()], quad_params), k+1)
         predictive_dynamics_node = nm.system.Node(predictive_dynamics, input_keys=['X', 'U', 'K'], output_keys=['X', 'K'])
         node_list.append(predictive_dynamics_node)
 
         self.predictive_system = nm.system.System(node_list, nsteps=N_pred)
         self.predictive_system.nodes[1].load_state_dict(mlp_state_dict)
         # self.predictive_system.nodes[1].eval() # unecessary with torch.no_grad in the forward method.
-
-        self.cylinder_center = ptu.tensor([1.,1.])
-        self.cylinder_radius = 0.5
 
     def reset(self, pid_state):
         """
@@ -665,10 +528,12 @@ class Predictor(torch.nn.Module):
         y = x_pred[0, :, 2]
 
         # Calculate the squared distances from the cylinder center
-        distances_squared = (x - self.cylinder_center[0])**2 + (y - self.cylinder_center[1])**2
+        distances = torch.sqrt((x - 1)**2 + (y - 1)**2) - 0.5
 
         # Check if any point is inside the cylinder (distance <= radius)
-        outside_cylinder = torch.any(distances_squared >= self.cylinder_radius**2).int()
+        outside_cylinder = torch.all(distances >= 0).int()
+
+        print(distances)
 
         return outside_cylinder.unsqueeze(0).unsqueeze(0)
 
@@ -710,7 +575,7 @@ def run_wp_p2p(
     predictor_node = nm.system.Node(predictor, input_keys=['X', 'PID_X'], output_keys=['X_pred', 'U_pred', 'Violation'], name='predictor')
     node_list.append(predictor_node)
 
-    filter = lambda x_seq, u_seq, violation: ptu.from_numpy(safety_filter.compute_control_step2(ptu.to_numpy(u_seq.T), ptu.to_numpy(x_seq.T), 0, violation)).unsqueeze(0)
+    filter = lambda x_seq, u_seq, violation: ptu.from_numpy(safety_filter.compute_control_step(ptu.to_numpy(u_seq.T), ptu.to_numpy(x_seq.T), 0, violation)).unsqueeze(0)
     filter_node = nm.system.Node(filter, input_keys=['X_pred', 'U_pred', 'Violation'], output_keys=['U_filtered'], name='dynamics')
     node_list.append(filter_node)
 
@@ -724,6 +589,8 @@ def run_wp_p2p(
     cl_system.nodes[1].load_state_dict(mlp_state_dict)
 
     X = ptu.from_numpy(quad_params["default_init_state_np"][None,:][None,:].astype(np.float32))
+    X[:,:,7] = 1.5 # xdot adversarial
+    X[:,:,8] = 1.5 # ydot adversarial
     data = {
         'X': X,
         'R': torch.concatenate([ptu.from_numpy(R(1)[None,:][None,:].astype(np.float32))]*nsteps, axis=1),
@@ -743,7 +610,7 @@ def run_wp_p2p(
     r_history = np.stack(ptu.to_numpy(output['R'].squeeze()))
 
     np.savez(
-        file = f"data/xu_fig8_mj_{str(Ts)}.npz",
+        file = f"data/xu_sf_p2p_mj_{str(Ts)}.npz",
         x_history = x_history,
         u_history = u_history,
         r_history = r_history
