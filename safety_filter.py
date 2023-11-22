@@ -15,440 +15,247 @@ import reference
 from utils.quad import Animator
 
 class SafetyFilter:
-    def __init__(self, x0, f, params, constraints, options=None):
 
-        # Initialize terms
-        self.N = params['N']                                        # Prediction horizon
-        self.delta = params['delta']                                # Constraint tightening parameter
-        self.dT = params['dt']                                      # Sampling time
-        self.integrator_type = params['integrator_type']            # String dictating type of integrators e.g., Euler
-        self.integrator = globals()[self.integrator_type].time_variant.numpy
+    """
+    The time-invariant variable-timestep robust predictive safety filter implementation
+    """
 
-        self.nx = params['nx']                                      # Number of states
-        self.nu = params['nu']                                      # Number of control inputs
-        try:
-            self.ny = params['ny']                                  # Number of outputs
-        except:
-            self.ny = self.nx
-        self.hf = constraints['hf']                                 # Function defining the terminal set (sublevel set of hf)
-        self.state_constraints = constraints['state_constraints']   # Dictionary holding all state constraints
-        self.input_constraints = constraints['input_constraints']   # Dictionary holding all input constraints
-        self.nc = len(self.state_constraints)                       # Number of state constraints
-        self.x0 = x0                                                # Initial condition
-        self.nu = params['nu']                                      # Number of inputs
-        self.ncu = len(self.input_constraints)                      # Number of input constraints
-        self.f = f                                                  # System dynamics
-        self.options = options                                      # Dictionary with additional options
+    def __init__(self, dynamics, Ts, Tf_hzn, N, quad_params, integrator):
 
-        self.infeasibilities = []
+        """ 
+        dynamics    - the quad dynamics themselves in casadi
+        Ts          - timestep
+        Tf_hzn      - the predictive horizon final time
+        N           - the number of steps in the predictive horizon (variable in length according to generate_variable_timesteps)
+        quad_params - the literal quad parameters
+        """
 
-        # If use_feas has not been set, set to default of True
-        if 'use_feas' not in options:
-            self.options['use_feas'] = True
+        self.dynamics = dynamics
+        dts = generate_variable_timesteps(Ts, Tf_hzn, N)
+        self.quad_params = quad_params
+        self.integrator = integrator
+        self.N = N
 
-        # If no robustness margin is set, set it to zero
-        if 'robust_margins' not in params:
-            self.rob_marg = {'Lh_x': 0, 'Ld': 0, 'Lf_x': 0, 'Lhf_x':0}
-        else:
-            self.rob_marg = params['robust_margins']
+        self.nx = 17
+        self.nu = 4
+        delta = 0.00005 # Small robustness margin for constraint tightening
+        alpha = 10000.0  # Gain term required to be large as per Wabersich2022 paper
+        alpha2 = 1.0 # Multiplication factor for feasibility parameters
+        Lh_x, Ld, Lf_x, Lhf_x = 0, 0, 0, 0
 
-        # If no event-triggering is set, it is set to true
-        if 'event-trigger' not in options:
-            self.options['event-trigger'] = True
-        self.events = []
-        self.events_log = {}
-        self.slacks = []
-        self.slacks_term = []
+        # Define Box Constraints
+        # -------------------------
+        state_constraints = {}
+        input_constraints = {}
 
-        # If alpha is not included, set to default value
-        if 'alpha' not in params:
-            self.alpha = 10000.0  # Gain term required to be large as per Wabersich2022 paper
-        else:
-            self.alpha = params['alpha']
-        if 'alpha2' not in params:
-            self.alpha2 = 1.0
-        else:
-            self.alpha2 = params['alpha2']
+        umax = [quad_params["maxCmd"]*100]  #model.umax*np.ones((nu,1)) # Input constraint parameters(max)
+        umin = [quad_params["minCmd"]*100] #model.umin*np.ones((nu,1)) # Input constraint parameters (min)
 
-        # 'time-varying' needs to be set to true if the system/constraints are time-varying
-        # This requires the optimization objects from casadi needs to be reset for every control computation
-        if 'time-varying' not in options:
-            self.options['time-varying'] = True
+        scu_k = quad_params["state_ub"] 
+        scl_k = quad_params["state_lb"]
+        scu_k[0:13] *= 100
+        scl_k[0:13] *= 100
+        
+        state_constraints[0] = lambda x, k: x - scu_k
+        state_constraints[1] = lambda x, k: scl_k - x
+        # cylinder constraint
+        x_c, y_c, r = 1.0, 1.0, 0.51
+        state_constraints[2] = lambda x, k: r**2 * (1 + k * dts[k] * 0.001) - (x[0] - x_c)**2 - (x[1] - y_c)**2
+        # state_constraints[2] = lambda x, k: r**2 - (x[0] - x_c)**2 - (x[1] - y_c)**2 # without expanding cylinder term
 
-        # Define optimization variables and constraints for the feasibility problem and safety filter problem
-        self.setup_opt_variables()
-        self.setup_constraints()
+        # Quadratic CBF
+        cbf_const = (np.sqrt(2) - 0.5) ** 2
+        # terminal constraint set
+        xr = np.copy(quad_params["default_init_state_np"])
+        xr[0], xr[1], xr[2] = 2, 2, 1 # x, y, z, (z is flipped)
+        hf = lambda x: (x-xr).T @ (x-xr) - cbf_const
 
-        # Set up variables to warm start the optimization problems
-        self.X_warm = np.zeros((self.nx, self.N+1))
-        self.U_warm = np.zeros((self.nu, self.N))
-        self.Xf_warm = np.zeros((self.nx, self.N + 1))
-        self.Uf_warm = np.zeros((self.nu, self.N))
-        if self.N > 1: # Only use intermediate slack variables if prediction is more than 1-step lookahead
-            self.Xi_warm = np.zeros((self.nc, self.N))
-        self.XiN_warm = 0.0
+        # Input constraints: h(u) <= 0
+        kk = 0
+        for ii in range(self.nu):
+            input_constraints[kk] = lambda u: u[ii] - umax[0]
+            kk += 1
+            input_constraints[kk] = lambda u: umin[0] - u[ii]
+            kk += 1   
 
+        self.nc = len(state_constraints) # number of state constraints
+        self.ncu = len(input_constraints) # number of input constraints
 
-    def setup_opt_variables(self):
-        '''Set up the optimization variables and related terms'''
-
-        # Define optimization in casadi for safety filter and feasibility problems
+        # Define CasADi optimisation objects
+        # ----------------------------------
         self.opti_feas = ca.Opti()
         self.opti = ca.Opti()
 
         # State, slack, input variables for  feasibility problem
-        self.X0_f = self.opti_feas.parameter(self.nx, 1)
-        self.X_f = self.opti_feas.variable(self.nx, self.N + 1)
-        if self.N > 1:
-            self.Xi_f = self.opti_feas.variable(self.nc, self.N )
-        self.XiN_f = self.opti_feas.variable()
-        self.U_f = self.opti_feas.variable(self.nu, self.N)
+        self.X0_f   = self.opti_feas.parameter(self.nx, 1)
+        self.X_f    = self.opti_feas.variable(self.nx, N + 1)
+        self.Xi_f   = self.opti_feas.variable(self.nc, N)
+        self.XiN_f  = self.opti_feas.variable()
+        self.U_f    = self.opti_feas.variable(self.nu, N)
 
         # State, input variables for safety filter
-        self.X0 = self.opti.parameter(self.nx,1)
-        self.X = self.opti.variable(self.nx, self.N + 1)
-        self.U = self.opti.variable(self.nu, self.N)
-        if self.N > 1:
-            self.Xi = self.opti.parameter(self.nc, self.N )
-        self.XiN = self.opti.parameter()
+        self.X0     = self.opti.parameter(self.nx, 1)
+        self.X      = self.opti.variable(self.nx, N + 1)
+        self.U      = self.opti.variable(self.nu, N)
+        self.Xi     = self.opti.parameter(self.nc, N)
+        self.XiN    = self.opti.parameter()
+        self.Unom   = self.opti.parameter(self.nu, 1)
 
-
-    def setup_constraints(self, k0=0):
-        '''Set up constraints
-         k0: initial time
-         '''
-
-        # Define differential equation/difference equation equality constraint for safety filter and feasibility problem
-        self.dynamics_constraints(X=self.X_f, U=self.U_f, opt=self.opti_feas, k0=k0)
-        self.dynamics_constraints(X=self.X, U=self.U, opt=self.opti, k0=k0)
-
-        # Define state , input, constraints
-        if self.N > 1:
-            self.define_constraints(X=self.X_f, U=self.U_f, opt=self.opti_feas, x0=self.X0_f, k0=k0, Xi=self.Xi_f, XiN=self.XiN_f)
-            self.define_constraints(X=self.X, U=self.U, opt=self.opti, x0=self.X0, k0=k0, Xi=self.Xi, XiN=self.XiN)
-        if self.N == 1:
-            self.define_constraints_1step(X=self.X_f, U=self.U_f, opt=self.opti_feas, x0=self.X0_f, k0=k0, XiN=self.XiN_f)
-            self.define_constraints_1step(X=self.X, U=self.U, opt=self.opti, x0=self.X0, k0=k0, XiN=self.XiN)
-
-        # Define non-negativity constraints for slack terms of the feasibility problem
-        if self.N > 1:
-            [self.opti_feas.subject_to(self.Xi_f[ii,:] >= 0.0) for ii in range(self.nc)]
-        self.opti_feas.subject_to(self.XiN_f >= 0.0)
+        # Set up variables to warm start the optimization problems
+        self.X_warm = np.zeros((self.nx, N+1))
+        self.U_warm = np.zeros((self.nu, N))
+        self.Xf_warm = np.zeros((self.nx, N + 1))
+        self.Uf_warm = np.zeros((self.nu, N))
+        self.Xi_warm = np.zeros((self.nc, N))
+        self.XiN_warm = 0.0
 
         # Define casadi optimization parameters
         self.p_opts = {"expand": True, "print_time": False, "verbose": False}
+        self.s_opts = {"max_iter": 1000, "print_level": 1, "tol": 1e-6}
         self.s_opts = { 'max_iter': 300,
                         'print_level': 1,
-                        'warm_start_init_point': 'yes',
-                        'tol': 1e-5,
-                        # 'constr_viol_tol': 1e-8,
-                        # "compl_inf_tol": 1e-8,
-                        # "acceptable_tol": 1e-4,
-                        # "acceptable_constr_viol_tol": 1e-8,
-                        # "acceptable_dual_inf_tol": 1e-8,
-                        # "acceptable_compl_inf_tol": 1e-8,
+                        # 'warm_start_init_point': 'yes',
+                        'tol': 1e-8,
+                        'constr_viol_tol': 1e-8,
+                        "compl_inf_tol": 1e-8,
+                        "acceptable_tol": 1e-4,
+                        "acceptable_constr_viol_tol": 1e-8,
+                        "acceptable_dual_inf_tol": 1e-8,
+                        "acceptable_compl_inf_tol": 1e-8,
                         }
+        # Define System Constraints
+        # -------------------------
 
-
-    def dynamics_constraints(self, X, U, opt, k0=0):
-        '''Defines the constraints related to the ode of the system dynamics
-        X: system state
-        U: system input
-        opt: Casadi optimization class
-        k0: initial time
-        '''
-
-        # Loop over control intervals (these are the equality constraints associated with the dynamics)
+        # dynamics constraints
         for k in range(self.N):
-            
-            x_next = self.integrator(self.f, X[:, k], k0 + k, U[:, k], self.dT)
-            opt.subject_to(X[:, k + 1] == x_next)
-
-
-    def define_constraints(self, X, U, opt, x0, k0=0, Xi=None, XiN=None):
-        '''Defines the system constraints, i.e, state and input constraints on the system
-        X: system state
-        U: system input
-        opt: Casadi optimization class
-        x0: initial state
-        k0: initial time step
-        Xi: optional slack terms for the system constraints
-        XiN: optional slack term for terminal constraint'''
-
+            self.opti_feas.subject_to(self.X_f[:, k + 1] == self.integrator(self.dynamics, self.X_f[:, k], self.U_f[:, k], dts[k], quad_params))
+            self.opti.subject_to(self.X[:, k + 1] == self.integrator(self.dynamics, self.X[:, k], self.U[:, k], dts[k], quad_params))
+        
         # Trajectory constraints,
         for ii in range(self.nx):
             # initial condition constraint
-            opt.subject_to(X[ii, 0] == x0[ii])
+            self.opti_feas.subject_to(self.X_f[ii, 0] == self.X0_f[ii])
+            self.opti.subject_to(self.X[ii, 0] == self.X0[ii])
 
         # State trajectory constraints, enforced at each time step
-        for ii in range(self.nc):
-            for kk in range(0,self.N):
-                rob_marg = self.compute_robust_margin(kk)
-                opt.subject_to(self.state_constraints[ii](X[:, kk],kk+k0) <= Xi[ii,kk] - rob_marg)
+        # for ii in range(self.nc):
+        #     for kk in range(0, self.N):
+        #         # compute robustness margin:
+        #         if kk > 0.0:
+        #             rob_marg = kk * delta + Lh_x * Ld * sum([Lf_x**j for j in range(kk)])
+        #         else:
+        #             rob_marg = 0.0
+        #         self.opti_feas.subject_to(state_constraints[ii](self.X_f[:, kk],kk) <= self.Xi_f[ii,kk] - rob_marg)
+        #         self.opti.subject_to(state_constraints[ii](self.X[:, kk],kk) <= self.Xi[ii,kk] - rob_marg)
 
         # Terminal constraint, enforced at last time step
-        rob_marg_term = self.compute_robust_margin_terminal()
-        opt.subject_to(self.hf(X[:, -1], k0+self.N) <= XiN - rob_marg_term)
+        # rob_marg_term = Lhf_x * Ld * Lf_x ** (self.N - 1)
+        # self.opti_feas.subject_to(hf(self.X_f[:, -1]) <= self.XiN_f - rob_marg_term)
+        # self.opti.subject_to(hf(self.X[:, -1]) <= self.XiN - rob_marg_term)
 
         # Input constraints
-        for ii in range(self.ncu):
-            for kk in range(self.N):
-                opt.subject_to(self.input_constraints[ii](U[:, kk]) <= 0.0)
+        # for iii in range(self.ncu):
+        #     for kkk in range(self.N):
+        #         self.opti_feas.subject_to(input_constraints[iii](self.U_f[:, kkk]) <= 0.0)
+        #         self.opti.subject_to(input_constraints[iii](self.U[:, kkk]) <= 0.0)
 
+        # Define non-negativity constraints for slack terms of the feasibility problem
+        [self.opti_feas.subject_to(self.Xi_f[ii,:] >= 0.0) for ii in range(self.nc)]
+        self.opti_feas.subject_to(self.XiN_f >= 0.0)
 
-    def define_constraints_1step(self, X, U, opt, x0, k0=0, XiN=None):
-        '''Defines the system constraints, i.e, state and input constraints on the system
-        X: system state
-        U: system input
-        opt: Casadi optimization class
-        x0: initial state
-        k0: initial time step
-        XiN: optional slack term for terminal constraint'''
+        # Define the cost functions
+        # -------------------------
 
-        # Trajectory constraints,
-        for ii in range(self.nx):
-            # initial condition constraint
-            opt.subject_to(X[ii, 0] == x0[ii])
-
-        # Terminal constraint, enforced at last time step (NOTE: here hf is time-varying)
-        rob_marg_term = self.compute_robust_margin_terminal()
-        opt.subject_to(self.hf(X[:, -1], k0 + 1) <= XiN - rob_marg_term)
-
-        # Input constraints
-        for ii in range(self.ncu):
-            opt.subject_to(self.input_constraints[ii](U) <= 0.0)
-
-
-    def compute_robust_margin(self, kk):
-        '''Given dictionary of robustness margin terms, compute the robustness margin
-        kk: Current time step
-        '''
-        if kk > 0.0:
-            return kk*self.delta + self.rob_marg['Lh_x']*self.rob_marg['Ld']*sum([ self.rob_marg['Lf_x']**j for j in range(kk) ])
-        else:
-            return 0.0
-
-
-    def compute_robust_margin_terminal(self):
-        '''Given dictionary of robustness margin terms, compute the robustness margin for the terminal constraint
-        '''
-        return self.rob_marg['Lhf_x']*self.rob_marg['Ld']*self.rob_marg['Lf_x']**(self.N-1)
-
-
-    def compute_control_step(self, u_seq, x_seq, k, constraints_satisfied):
-
-        if self.options['event-trigger'] and constraints_satisfied:
-            # Save solution for warm start
-            self.X_warm = x_seq
-            self.U_warm = u_seq
-            return u_seq[:,0]
-        else:
-            # Set up the optimization variables, constraints for the current state and time step
-            # if the system is time-varying
-            if self.options['time-varying']:
-                self.setup_opt_variables()
-                self.setup_constraints(k0=k)
-
-            # Set values to initial condition parameters
-            self.opti_feas.set_value(self.X0_f, x_seq[:,0])
-            self.opti.set_value(self.X0, x_seq[:,0])
-
-            # Solve the safety filter, only take the optimal control trajectory, and return the first instance of the control trajectory
-            sol = self.solve_safety_filter(unom=u_seq, x=x_seq[:,0], k=k)[0]
-
-            # Save solution for warm start
-            self.X_warm = sol.value(self.X)
-            self.U_warm = sol.value(self.U)
-            try:
-                self.lamg_warm = sol.value(self.opti.lam_g)
-            except:
-                print('initialized, no dual variables')
-
-            return np.array(sol.value(self.U[:,0])).reshape((self.nu,1))[:,0]
-
-
-    def solve_safety_filter(self, unom, x0, k0=0):
-        '''Solve the safety filter optimization problem
-        unom: Given nominal control to be implemented at current time if constraints are satisfied
-        unom: nominal control unom(x,k)
-        x0: initial state
-        k0: initial time step
-        '''
-
-        # Solve feasibility problem, if use_feas is True, then use slack terms, else set them to zero
-        if self.options['use_feas']:
-            feas_sol = self.solve_feasibility()
-            if self.N > 1:
-                Xi_sol = feas_sol.value(self.Xi_f)
-                self.slacks.append(np.linalg.norm(Xi_sol))
-            XiN_sol = feas_sol.value(self.XiN_f)
-            self.slacks_term.append( XiN_sol )
-
-            # Save solutions for warm start
-            self.Xf_warm = feas_sol.value(self.X_f)
-            self.Uf_warm = feas_sol.value(self.U_f)
-            if self.N > 1:
-                self.Xi_warm = Xi_sol
-            self.XiN_warm = XiN_sol
-            try:
-                self.lamgf_warm = feas_sol.value(self.opti_feas.lam_g) # dual variables
-            except:
-                print('initialized no dual variables yet for feasibility problem')
-
-        else:
-            if self.N > 1:
-                Xi_sol = np.zeros((self.nc, self.N))
-            XiN_sol = 0.0
-
-        # Set slack variables and control objective to remain minimally close to unom
-        if self.N > 1:
-            self.opti.set_value(self.Xi, Xi_sol)
-        self.opti.set_value(self.XiN, XiN_sol)
-        self.opti.minimize(ca.dot(self.U[:, 0] - unom[:,0],self.U[:, 0] - unom[:,0]))
-
-        # Warm start the optimization
-        self.opti.set_initial(self.X, self.Xf_warm)
-        self.opti.set_initial(self.U, self.Uf_warm)
-        self.opti.set_initial(self.opti.lam_g, self.lamgf_warm[:-((self.N)*self.nc+1)]) # Removing lambdas associated with non-negative constraint in feasibility problem
-
-        # Set the solver
-        self.opti.solver("ipopt", self.p_opts, self.s_opts)  # set numerical backend
-        try:
-            if self.N > 1:
-                return self.opti.solve(), Xi_sol, XiN_sol
-            if self.N == 1:
-                return self.opti.solve(), XiN_sol
-        except:
-            print(traceback.format_exc())
-            print('------------------------------------INFEASIBILITY---------------------------------------------')
-            self.infeasibilities.append(k0)
-            if self.N > 1:
-                return self.opti.debug, Xi_sol, XiN_sol
-            if self.N ==1 :
-                return self.opti.debug, XiN_sol
-
-
-    def solve_feasibility(self):
-        '''Solve the feasibility problem'''
-
-        # Define the objective to penalize the use of slack variables
-        if self.N > 1:
-            self.opti_feas.minimize(self.alpha * self.XiN_f + self.alpha2*sum([self.Xi_f[:, kk].T @ self.Xi_f[:, kk] for kk in range(self.N)]))
-
-        if self.N == 1:
-            self.opti_feas.minimize(self.alpha * self.XiN_f)
+        # Define the feasibility problem objective to penalize the use of slack variables
+        self.opti_feas.minimize(alpha * self.XiN_f + alpha2*sum([self.Xi_f[:, kk].T @ self.Xi_f[:, kk] for kk in range(N)]))
+        # Safety Filter
+        self.opti.minimize(ca.dot(self.U[:,0] - self.Unom[:,0], self.U[:,0] - self.Unom[:,0]))
 
         # Warm start the optimization
         self.opti_feas.set_initial(self.X_f, self.Xf_warm)
         self.opti_feas.set_initial(self.U_f, self.Uf_warm)
-        if self.N > 1:
-            self.opti_feas.set_initial(self.Xi_f, self.Xi_warm)
+        self.opti_feas.set_initial(self.Xi_f, self.Xi_warm)
         self.opti_feas.set_initial(self.XiN_f, self.XiN_warm)
         try:
             self.opti_feas.set_initial(self.opti_feas.lam_g, self.lamgf_warm)
         except:
             print('initialized no dual variables yet for feasibility problem')
 
-        # Define the solver
+        # Define the solvers
         self.opti_feas.solver("ipopt", self.p_opts, self.s_opts)  # set numerical backend
+        self.opti.solver("ipopt", self.p_opts, self.s_opts)  # set numerical backend
 
-        return self.opti_feas.solve()
+    def __call__(self, x_seq, u_seq, constraints_satisfied):
 
+        u_seq = ptu.to_numpy(u_seq.T)
+        x_seq = ptu.to_numpy(x_seq.T)
 
-def get_sf_params(N_pred, Tf_hzn, Ts, quad_params, integrator):
+        if constraints_satisfied:
 
-    # terminal constraint set
-    xr = np.copy(quad_params["default_init_state_np"])
-    xr[0] = 2 # x  
-    xr[1] = 2 # y
-    xr[2] = 1 # z flipped
+            # Save solution for warm start
+            self.X_warm = x_seq
+            self.U_warm = u_seq
+            self.Xf_warm = x_seq
+            self.Uf_warm = u_seq
+            self.Xi_warm = np.zeros((self.nc, self.N))
+            self.XiN_warm = 0.0
+            return ptu.from_numpy(u_seq[:,0])
+        
+        else:
 
-    # instantiate the dynamics
-    # ------------------------
-    quad = state_dot.casadi
-    dt = Ts
-    nx = 17
-    f = lambda x, t, u: state_dot.casadi_vectorized(x, u, params=quad_params)
+            # solve the feasibility problem:
+            # ------------------------------
 
-    # disturbance on the input
-    # ------------------------
-    disturbance_scaling = 0.0
-    idx = [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17] # select all states to perturb
-    pert_idx = [1 if i in idx else 0 for i in range(nx)]
-    pert_mat = np.diag(pert_idx)
-    d = lambda x, t, u: pert_mat * np.sin(t) * disturbance_scaling
-    f_pert = lambda x, t, u: f(x, t, u) + d(x, t, u)
+            # Set values to initial condition parameters, set initial values to optimisation parameters
+            self.opti_feas.set_value(self.X0_f, x_seq[:,0])
+            self.opti_feas.set_initial(self.X_f, self.Xf_warm)
+            self.opti_feas.set_initial(self.U_f, self.Uf_warm)
+            self.opti_feas.set_initial(self.Xi_f, self.Xi_warm)
+            self.opti_feas.set_initial(self.XiN_f, self.XiN_warm)
+            try:
+                self.opti_feas.set_initial(self.opti_feas.lam_g, self.lamgf_warm)
+            except:
+                print('initialized no dual variables yet for feasibility problem')
 
-    # Safety Filter Parameters
-    # ------------------------
-    sf_params = {}
-    sf_params['N'] = N_pred  # prediction horizon
-    sf_params['dt'] = dt  # sampling time
+            feas_sol = self.opti_feas.solve()
 
-        # Find the optimal dts for the MPC
-    dt_1 = Ts
-    d = (2 * (Tf_hzn/N_pred) - 2 * dt_1) / (N_pred - 1)
-    dts_init = [dt_1 + i * d for i in range(N_pred)]
+            # Save solutions for warm start
+            self.Xf_warm = feas_sol.value(self.X_f)
+            self.Uf_warm = feas_sol.value(self.U_f)
+            self.Xi_warm = feas_sol.value(self.Xi_f)
+            self.XiN_warm = feas_sol.value(self.XiN_f)
+            self.lamgf_warm = feas_sol.value(self.opti_feas.lam_g) # dual variables
 
-    sf_params['dts'] = dts_init
-    sf_params['delta'] = 0.00005  # Small robustness margin for constraint tightening
-    sf_params['robust_margin'] = 0.1 #0.0 #  #   Robustness margin for handling perturbations
-    sf_params['robust_margin_terminal'] = 0.0001 #0.0 # # Robustness margin for handling perturbations (terminal set)
-    sf_params['alpha2'] = 1.0  # Multiplication factor for feasibility parameters
-    sf_params['integrator_type'] = 'euler'  # Integrator type for the safety filter
+            print(f"Xi_sol : {feas_sol.value(self.Xi_f)[0,0]}")
+            print(f"XiN_sol : {feas_sol.value(self.XiN_f)}")
 
-    # Define System Constraints
-    # -------------------------
-    terminal_constraint = {}
-    state_constraints = {}
-    input_constraints = {}
+            # solve the safety filter:
+            # ------------------------
 
-    sf_params['nx'] = 17
-    sf_params['nu'] = 4
+            # Set values to initial condition parameters, slack variables and control objective to remain minimally close to unom
+            self.opti.set_value(self.X0, x_seq[:,0])
+            self.opti.set_value(self.Xi, feas_sol.value(self.Xi_f))
+            self.opti.set_value(self.XiN, feas_sol.value(self.XiN_f))
+            self.opti.set_value(self.Unom, u_seq[:,0])
 
-    umax = [quad_params["maxCmd"]]*100  #model.umax*np.ones((nu,1)) # Input constraint parameters(max)
-    umin = [quad_params["minCmd"]]*100 #model.umin*np.ones((nu,1)) # Input constraint parameters (min)
+            # Warm start the optimization
+            self.opti.set_initial(self.X, self.Xf_warm)
+            self.opti.set_initial(self.U, self.Uf_warm)
+            self.opti.set_initial(self.opti.lam_g, self.lamgf_warm[:-((self.N)*self.nc+1)]) # Removing lambdas associated with non-negative constraint in feasibility problem
 
-    scu_k = quad_params["state_ub"] 
-    scl_k = quad_params["state_lb"]
-    scu_k[0:13] *= 100
-    scl_k[0:13] *= 100
-    
-    state_constraints[0] = lambda x, k: x - scu_k
-    state_constraints[1] = lambda x, k: scl_k - x
-    # cylinder constraint
-    x_c = 1.0
-    y_c = 1.0
-    r = 0.51
-    state_constraints[2] = lambda x, k: r**2 * (1 + k * dt * 0.001) - (x[0] - x_c)**2 - (x[1] - y_c)**2
-    # state_constraints[2] = lambda x, k: r**2 - (x[0] - x_c)**2 - (x[1] - y_c)**2
+            try:
+                sol = self.opti.solve()
+            except:
+                print(traceback.format_exc())
+                print('------------------------------------INFEASIBILITY---------------------------------------------')
+                return self.opti.debug, feas_sol.value(self.Xi_f), feas_sol.value(self.XiN_f)
+            
+            # Save solution for warm start
+            self.X_warm = sol.value(self.X)
+            self.U_warm = sol.value(self.U)
+            self.lamg_warm = sol.value(self.opti.lam_g)
 
-    # Quadratic CBF
-    cbf_const = (np.sqrt(2) - 0.5) ** 2
-    hf = lambda x, k=0: (x-xr).T @ (x-xr) - cbf_const
-
-    # Input constraints: h(u) <= 0
-    kk = 0
-    nu = 4
-    for ii in range(nu):
-        input_constraints[kk] = lambda u: u[ii] - umax[0]
-        kk += 1
-        input_constraints[kk] = lambda u: umin[0] - u[ii]
-        kk += 1    
-
-    constraints = {}
-    constraints['state_constraints'] = state_constraints
-    constraints['hf'] = hf
-    constraints['input_constraints'] = input_constraints    
-
-    # Implementation
-    # --------------
-    # Set up the safety filter and nominal control
-    # x0 = random_state()[:,None] # 0.9*model.x0.reshape((nx, 1)) #
-    x0 = quad_params["default_init_state_np"]
-
-    return x0, f, sf_params, constraints, {'event-trigger': True}
-
+            return ptu.from_numpy(np.array(sol.value(self.U[:,0])).reshape((self.nu,1))[:,0])
 
 def get_nominal_control_system_nodes(quad_params, ctrl_params, Ts):
 
@@ -457,12 +264,6 @@ def get_nominal_control_system_nodes(quad_params, ctrl_params, Ts):
     def process_policy_input(x, r, c, radius=0.5):
         idx = [0,7,1,8,2,9]
         x_r, r_r = x[:, idx], r[:, idx]
-        # if position inside cylinder, project to the surface because DPC not trained inside cylinder
-        # distance = torch.sqrt((x_r[:,0] - c[:,0])**2 + (x_r[:,1] - c[:,1])**2)
-        # if distance < radius:
-        #     scale = radius / distance
-        #     x_r[:,0] = c[:,0] + (x_r[:,0] - c[:,0]) * scale
-        #     x_r[:,1] = c[:,1] + (x_r[:,1] - c[:,1]) * scale
         x_r = torch.clip(x_r, min=ptu.tensor(-3.), max=ptu.tensor(3.))
         r_r = torch.clip(r_r, min=ptu.tensor(-3.), max=ptu.tensor(3.))
         c_pos, c_vel = posVel2cyl(x_r, c, radius)
@@ -487,74 +288,46 @@ def get_nominal_control_system_nodes(quad_params, ctrl_params, Ts):
 
     return nominal_control_node_list
 
+class Predictor:
 
-class Predictor(torch.nn.Module):
+    def __init__(self, quad_params, ctrl_params, Tf_hzn, N, mlp_state_dict) -> None:
 
-    def __init__(self, quad_params, ctrl_params, waypoint, Tf_hzn, N_pred, mlp_state_dict) -> None:
-        super().__init__()
-        # waypoint = R(1)
-        self.r = torch.concatenate([ptu.from_numpy(waypoint[None,:][None,:])]*N_pred, axis=1)
-        self.c = torch.concatenate([ptu.tensor([[[1,1]]])]*N_pred, axis=1)
-
-        dts = generate_variable_timesteps(Ts, Tf_hzn, N_pred)
-
+        self.r = ptu.tensor([[[2, 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]]*N])
+        self.c = ptu.tensor([[[1, 1]]*N])
+        dts = generate_variable_timesteps(Ts, Tf_hzn, N)
         node_list = get_nominal_control_system_nodes(quad_params, ctrl_params, Ts)
-
         predictive_dynamics = lambda x, u, k: (euler.pytorch(state_dot.pytorch_vectorized, x, u, dts[torch.round(k).long()], quad_params), k+1)
         predictive_dynamics_node = nm.system.Node(predictive_dynamics, input_keys=['X', 'U', 'K'], output_keys=['X', 'K'])
         node_list.append(predictive_dynamics_node)
-
-        self.predictive_system = nm.system.System(node_list, nsteps=N_pred)
+        self.predictive_system = nm.system.System(node_list, nsteps=N)
         self.predictive_system.nodes[1].load_state_dict(mlp_state_dict)
-        # self.predictive_system.nodes[1].eval() # unecessary with torch.no_grad in the forward method.
 
-    def reset(self, pid_state):
-        """
-        The PID created for the low level control is stateful - the integrator, and some old
-        values are retained for subsequent calculations. Therefore when using this control for
-        testing the nominal control, we must reset the nominal control with the current state
-        before every prediction rollout.
-        """
-
+    def reset_pid(self, pid_state):
         self.predictive_system.nodes[3].callable.reset(pid_state)
 
     def check_violations(self, x_pred):
-        """
-        See if the simulation yielded any problems with constraints
-        """
-
         # Extract x and y coordinates
-        x = x_pred[0, :, 1]
-        y = x_pred[0, :, 2]
-
+        x = x_pred[0, :, 0]
+        y = x_pred[0, :, 1]
         # Calculate the squared distances from the cylinder center
         distances = torch.sqrt((x - 1)**2 + (y - 1)**2) - 0.5
-
         # Check if any point is inside the cylinder (distance <= radius)
         outside_cylinder = torch.all(distances >= 0).int()
-
         print(distances)
-
         return outside_cylinder.unsqueeze(0).unsqueeze(0)
-
-    def forward(self, x, pid_state):
-        """
-        Conduct a simulation
-        """
-        self.reset(pid_state)
+    
+    def __call__(self, x, pid_state):
+        self.reset_pid(pid_state)
         initial_conditions = {'X': x.unsqueeze(0), 'R':self.r, 'Cyl':self.c, 'K': ptu.tensor([[[0]]])}
-
         with torch.no_grad():
-            predictions = self.predictive_system.forward(initial_conditions, retain_grad=False, print_loop=False)
-        
+            predictions = self.predictive_system(initial_conditions, retain_grad=False, print_loop=False)
         violations = self.check_violations(predictions['X'])
-
         return predictions['X'][0], predictions['U'][0], violations
 
 
 def run_wp_p2p(
         Ti, Tf, Ts,
-        N_pred, Tf_hzn,
+        N_sf, N_pred, Tf_hzn,
         integrator = 'euler',
         policy_save_path = 'data/',
         media_save_path = 'data/training/',
@@ -566,16 +339,16 @@ def run_wp_p2p(
     ctrl_params = get_ctrl_params()
     mlp_state_dict = torch.load(policy_save_path + 'wp_p2p_policy.pth')
 
-    safety_filter = SafetyFilter(*get_sf_params(N_pred, Tf_hzn, Ts, quad_params, integrator))
+    safety_filter = SafetyFilter(state_dot.casadi_vectorized, Ts, Tf_hzn, N_sf, quad_params, euler.numpy)
     R = reference.waypoint('wp_p2p', average_vel=1.0)
 
     node_list = get_nominal_control_system_nodes(quad_params, ctrl_params, Ts)
 
-    predictor = Predictor(quad_params, ctrl_params, R(1), Tf_hzn, N_pred, mlp_state_dict)
+    predictor = Predictor(quad_params, ctrl_params, Tf_hzn, N_pred, mlp_state_dict)
     predictor_node = nm.system.Node(predictor, input_keys=['X', 'PID_X'], output_keys=['X_pred', 'U_pred', 'Violation'], name='predictor')
     node_list.append(predictor_node)
 
-    filter = lambda x_seq, u_seq, violation: ptu.from_numpy(safety_filter.compute_control_step(ptu.to_numpy(u_seq.T), ptu.to_numpy(x_seq.T), 0, violation)).unsqueeze(0)
+    filter = lambda x_seq, u_seq, violation: safety_filter(x_seq, u_seq, violation).unsqueeze(0)
     filter_node = nm.system.Node(filter, input_keys=['X_pred', 'U_pred', 'Violation'], output_keys=['U_filtered'], name='dynamics')
     node_list.append(filter_node)
 
@@ -591,6 +364,9 @@ def run_wp_p2p(
     X = ptu.from_numpy(quad_params["default_init_state_np"][None,:][None,:].astype(np.float32))
     X[:,:,7] = 1.5 # xdot adversarial
     X[:,:,8] = 1.5 # ydot adversarial
+
+    X[:,:,0] = 0.9
+    X[:,:,1] = 0.9
     data = {
         'X': X,
         'R': torch.concatenate([ptu.from_numpy(R(1)[None,:][None,:].astype(np.float32))]*nsteps, axis=1),
@@ -623,14 +399,32 @@ def run_wp_p2p(
 
 if __name__ == "__main__":
 
+    # example usage
+    import utils.pytorch as ptu
+    from utils.integrate import euler, RK4
+
     ptu.init_dtype()
     ptu.init_gpu(use_gpu=False)
 
     Ti, Tf, Ts = 0.0, 3.5, 0.001
+    N_sf = 100
     N_pred = 100
     Tf_hzn = 0.1
     integrator = 'euler'
 
-    run_wp_p2p(Ti, Tf, Ts, N_pred, Tf_hzn, integrator)
+    run_wp_p2p(Ti, Tf, Ts, N_sf, N_pred, Tf_hzn, integrator)
+
+
+    quad_params = get_quad_params()
+
+    safety_filter = SafetyFilter(state_dot.casadi_vectorized, Ts, Tf_hzn, N, quad_params, euler.numpy)
+    
+    def example_usage():
+        u_seq = np.array([[1., 1., 1., 1.]]*N)
+        x_seq = np.vstack([quad_params["default_init_state_np"]]*(N+1))
+        passthrough = safety_filter(u_seq, x_seq, True)
+        computed = safety_filter(u_seq, x_seq, False)
+
+    
 
     print('fin')
