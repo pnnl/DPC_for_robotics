@@ -543,7 +543,6 @@ def train_wp_p2p(    # recommendations:
         cl_system.nsteps = nstep
         optimizer.param_groups[0]['lr'] = lr
 
-
     callback.animate()
     callback.delete_all_but_last_image()
 
@@ -1138,6 +1137,9 @@ if __name__ == "__main__":
     np.random.seed(0)
     ptu.init_gpu(use_gpu=False)
 
+    train_wp_p2p(iterations=2, epochs=10, batch_size=5000, minibatch_size=10, nstep=100, lr=0.05, Ts=0.1)
+
+
     import time
     # needs a .detach() in the system.forward method indata to not consume all of your RAM
     # this cannot be on when training though, just for inference, running - nvm i made a new method to solve this
@@ -1148,7 +1150,6 @@ if __name__ == "__main__":
     train_fig8(iterations=1, epochs=5, batch_size=5000, minibatch_size=10, nstep=100, lr=0.05, Ts=0.1)
     train_wp_traj(iterations=1, epochs=10, batch_size=5000, minibatch_size=10, nstep=100, lr=0.05, Ts=0.1)
     start_time = time.time()
-    train_wp_p2p(iterations=2, epochs=10, batch_size=5000, minibatch_size=10, nstep=100, lr=0.05, Ts=0.1)
     end_time = time.time()
     elapsed_time = end_time - start_time
 

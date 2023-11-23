@@ -516,7 +516,11 @@ class quaternion_conjugate:
     @staticmethod
     def casadi(q):
         return ca.vertcat(q[0,:], -q[1,:], -q[2,:], -q[3,:])
-
+    
+    @staticmethod
+    def pytorch_vectorized(q):
+        return torch.hstack([q[:,0], -q[:,1:]])
+    
 class quaternion_multiply:
 
     @staticmethod
@@ -587,6 +591,12 @@ class quaternion_error:
         # Calculate the quaternion error
         q_desired_conjugate = quaternion_conjugate.casadi(q_desired)
         return quaternion_multiply.casadi(q, q_desired_conjugate)
+
+    @staticmethod
+    def pytorch_vectorized(q, q_desired):
+        # Calculate the quaternion error
+        q_desired_conjugate = quaternion_conjugate.pytorch_vectorized(q_desired)
+        return quaternion_multiply.pytorch_vectorized(q, q_desired_conjugate)
 
 class quaternion_to_dcm:
 
@@ -670,6 +680,23 @@ class normalize_vector:
     def pytorch_vectorized(q: torch.Tensor, norm_dim=1) -> torch.Tensor:
         normalised_vecs = torch.linalg.norm(q, dim=norm_dim).unsqueeze(1)
         return q/normalised_vecs
+
+class quaternion_derivative_to_angular_velocity:
+    """
+    Convert a batch of quaternion derivatives to angular velocities (p, q, r) in a vectorized manner.
+    
+    :param q: Batch of quaternions, shape [batch_size, 4]
+    :param q_dot: Batch of quaternion derivatives, shape [batch_size, 4]
+    :return: Batch of angular velocities [p, q, r], shape [batch_size, 3]
+    """
+    @staticmethod
+    def pytorch_vectorized(q, q_dot):
+        p = 2 * (q_dot[:, 1] * q[:, 0] - q_dot[:, 0] * q[:, 1] - q_dot[:, 2] * q[:, 3] + q_dot[:, 3] * q[:, 2])
+        q = 2 * (q_dot[:, 2] * q[:, 0] - q_dot[:, 0] * q[:, 2] - q_dot[:, 3] * q[:, 1] + q_dot[:, 1] * q[:, 3])
+        r = 2 * (q_dot[:, 3] * q[:, 0] - q_dot[:, 0] * q[:, 3] - q_dot[:, 1] * q[:, 2] + q_dot[:, 2] * q[:, 1])
+
+        return torch.stack([p, q, r], dim=1)
+
 
 if __name__ == "__main__":
     

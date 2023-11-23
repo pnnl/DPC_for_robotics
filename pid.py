@@ -106,8 +106,8 @@ class PID(torch.nn.Module):
     The algorithm:
     --------------
 
-        - We provide a setpoint for velocity that we hope to achieve in x, y, z directions
-        - in xyz_vel_control we have a PI controller calculating the thrust required to get there, which is the thrust_sp
+        - We provide a setpoint for thrust that we hope to achieve in x, y, z directions
+        - in xyz_thr_control we have a PI controller limit the thrust requested, which is the thrust_sp
         - in thrustToAttitude we calculate the orientation for the quad required to achieve this x, y, z thrust, which is the self.qd_full
         - in attitude_control we have a P controller calculating the angular velocities to get to this orientation, which is self.rate_sp
         - in rate_control we have a P controller minimising error of angular velocities, whilst penalising angular accelerations, generating rateCtrl (desired moment)
@@ -249,6 +249,8 @@ class PID(torch.nn.Module):
 
     def thrustToAttitude(self, eul_sp, thrust_sp):
         
+        """Marked to remain the same in the DPC conversion"""
+
         # Create Full Desired Quaternion Based on Thrust Setpoint and Desired Yaw Angle
         # ---------------------------
         yaw_sp = eul_sp[:,2]

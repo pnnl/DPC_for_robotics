@@ -38,8 +38,11 @@ class SafetyFilter:
 
         self.nx = 17
         self.nu = 4
-        delta = 0.00005 # Small robustness margin for constraint tightening
-        alpha = 10000.0  # Gain term required to be large as per Wabersich2022 paper
+        # delta = 0.00005 # Small robustness margin for constraint tightening
+        delta = 0.0001
+        # delta = 0.0
+        # alpha = 10000.0  # Gain term required to be large as per Wabersich2022 paper
+        alpha = 1000000.0
         alpha2 = 1.0 # Multiplication factor for feasibility parameters
         Lh_x, Ld, Lf_x, Lhf_x = 0, 0, 0, 0
 
@@ -60,7 +63,12 @@ class SafetyFilter:
         state_constraints[1] = lambda x, k: scl_k - x
         # cylinder constraint
         x_c, y_c, r = 1.0, 1.0, 0.51
-        state_constraints[2] = lambda x, k: r**2 * (1 + k * dts[k] * 0.001) - (x[0] - x_c)**2 - (x[1] - y_c)**2
+        # state_constraints[2] = lambda x, k: r**2 * (1 + k * dts[k] * 0.001) - (x[0] - x_c)**2 - (x[1] - y_c)**2
+        def cyl_constraint(x, k):
+            print(x[0].shape)
+            print(x[1].shape)
+            return r**2 * (1 + k * dts[k] * 0.001) - (x[0] - x_c)**2 - (x[1] - y_c)**2
+        state_constraints[2] = cyl_constraint
         # state_constraints[2] = lambda x, k: r**2 - (x[0] - x_c)**2 - (x[1] - y_c)**2 # without expanding cylinder term
 
         # Quadratic CBF
@@ -111,18 +119,19 @@ class SafetyFilter:
 
         # Define casadi optimization parameters
         self.p_opts = {"expand": True, "print_time": False, "verbose": False}
-        self.s_opts = {"max_iter": 1000, "print_level": 1, "tol": 1e-6}
-        self.s_opts = { 'max_iter': 300,
-                        'print_level': 1,
-                        # 'warm_start_init_point': 'yes',
-                        'tol': 1e-8,
-                        'constr_viol_tol': 1e-8,
-                        "compl_inf_tol": 1e-8,
-                        "acceptable_tol": 1e-4,
-                        "acceptable_constr_viol_tol": 1e-8,
-                        "acceptable_dual_inf_tol": 1e-8,
-                        "acceptable_compl_inf_tol": 1e-8,
-                        }
+        self.s_opts = {"max_iter": 5000, "print_level": 1, "tol": 1e-6}
+        # self.s_opts = { 'max_iter': 300,
+        #                 'print_level': 1,
+        #                 # 'warm_start_init_point': 'yes',
+        #                 'tol': 1e-8,
+        #                 'constr_viol_tol': 1e-8,
+        #                 "compl_inf_tol": 1e-8,
+        #                 "acceptable_tol": 1e-4,
+        #                 "acceptable_constr_viol_tol": 1e-8,
+        #                 "acceptable_dual_inf_tol": 1e-8,
+        #                 "acceptable_compl_inf_tol": 1e-8,
+        #                 }
+
         # Define System Constraints
         # -------------------------
 
@@ -138,26 +147,26 @@ class SafetyFilter:
             self.opti.subject_to(self.X[ii, 0] == self.X0[ii])
 
         # State trajectory constraints, enforced at each time step
-        # for ii in range(self.nc):
-        #     for kk in range(0, self.N):
-        #         # compute robustness margin:
-        #         if kk > 0.0:
-        #             rob_marg = kk * delta + Lh_x * Ld * sum([Lf_x**j for j in range(kk)])
-        #         else:
-        #             rob_marg = 0.0
-        #         self.opti_feas.subject_to(state_constraints[ii](self.X_f[:, kk],kk) <= self.Xi_f[ii,kk] - rob_marg)
-        #         self.opti.subject_to(state_constraints[ii](self.X[:, kk],kk) <= self.Xi[ii,kk] - rob_marg)
+        for ii in range(self.nc):
+            for kk in range(0, self.N):
+                # compute robustness margin:
+                if kk > 0.0:
+                    rob_marg = kk * delta + Lh_x * Ld * sum([Lf_x**j for j in range(kk)])
+                else:
+                    rob_marg = 0.0
+                self.opti_feas.subject_to(state_constraints[ii](self.X_f[:, kk],kk) <= self.Xi_f[ii,kk] - rob_marg)
+                self.opti.subject_to(state_constraints[ii](self.X[:, kk],kk) <= self.Xi[ii,kk] - rob_marg)
 
         # Terminal constraint, enforced at last time step
-        # rob_marg_term = Lhf_x * Ld * Lf_x ** (self.N - 1)
-        # self.opti_feas.subject_to(hf(self.X_f[:, -1]) <= self.XiN_f - rob_marg_term)
-        # self.opti.subject_to(hf(self.X[:, -1]) <= self.XiN - rob_marg_term)
+        rob_marg_term = Lhf_x * Ld * Lf_x ** (self.N - 1)
+        self.opti_feas.subject_to(hf(self.X_f[:, -1]) <= self.XiN_f - rob_marg_term)
+        self.opti.subject_to(hf(self.X[:, -1]) <= self.XiN - rob_marg_term)
 
         # Input constraints
-        # for iii in range(self.ncu):
-        #     for kkk in range(self.N):
-        #         self.opti_feas.subject_to(input_constraints[iii](self.U_f[:, kkk]) <= 0.0)
-        #         self.opti.subject_to(input_constraints[iii](self.U[:, kkk]) <= 0.0)
+        for iii in range(self.ncu):
+            for kkk in range(self.N):
+                self.opti_feas.subject_to(input_constraints[iii](self.U_f[:, kkk]) <= 0.0)
+                self.opti.subject_to(input_constraints[iii](self.U[:, kkk]) <= 0.0)
 
         # Define non-negativity constraints for slack terms of the feasibility problem
         [self.opti_feas.subject_to(self.Xi_f[ii,:] >= 0.0) for ii in range(self.nc)]
@@ -193,12 +202,12 @@ class SafetyFilter:
         if constraints_satisfied:
 
             # Save solution for warm start
-            self.X_warm = x_seq
-            self.U_warm = u_seq
-            self.Xf_warm = x_seq
-            self.Uf_warm = u_seq
-            self.Xi_warm = np.zeros((self.nc, self.N))
-            self.XiN_warm = 0.0
+            # self.X_warm = x_seq
+            # self.U_warm = u_seq
+            # self.Xf_warm = x_seq
+            # self.Uf_warm = u_seq
+            # self.Xi_warm = np.zeros((self.nc, self.N))
+            # self.XiN_warm = 0.0
             return ptu.from_numpy(u_seq[:,0])
         
         else:
@@ -248,14 +257,19 @@ class SafetyFilter:
             except:
                 print(traceback.format_exc())
                 print('------------------------------------INFEASIBILITY---------------------------------------------')
-                return self.opti.debug, feas_sol.value(self.Xi_f), feas_sol.value(self.XiN_f)
+                print('using nominal DPC control...')
+                return ptu.from_numpy(u_seq[:,0]) # self.opti.debug, feas_sol.value(self.Xi_f), feas_sol.value(self.XiN_f)
             
             # Save solution for warm start
             self.X_warm = sol.value(self.X)
             self.U_warm = sol.value(self.U)
             self.lamg_warm = sol.value(self.opti.lam_g)
 
-            return ptu.from_numpy(np.array(sol.value(self.U[:,0])).reshape((self.nu,1))[:,0])
+            u = ptu.from_numpy(np.array(sol.value(self.U[:,0])).reshape((self.nu,1))[:,0])
+
+            print(f"u delta: {ptu.from_numpy(u_seq[:,0]) - u}")
+
+            return u
 
 def get_nominal_control_system_nodes(quad_params, ctrl_params, Ts):
 
@@ -296,14 +310,11 @@ class Predictor:
         self.c = ptu.tensor([[[1, 1]]*N])
         dts = generate_variable_timesteps(Ts, Tf_hzn, N)
         node_list = get_nominal_control_system_nodes(quad_params, ctrl_params, Ts)
-        predictive_dynamics = lambda x, u, k: (euler.pytorch(state_dot.pytorch_vectorized, x, u, dts[torch.round(k).long()], quad_params), k+1)
+        predictive_dynamics = lambda x, u, k: (euler(state_dot.pytorch_vectorized, x, u, dts[torch.round(k).long()], quad_params), k+1)
         predictive_dynamics_node = nm.system.Node(predictive_dynamics, input_keys=['X', 'U', 'K'], output_keys=['X', 'K'])
         node_list.append(predictive_dynamics_node)
         self.predictive_system = nm.system.System(node_list, nsteps=N)
         self.predictive_system.nodes[1].load_state_dict(mlp_state_dict)
-
-    def reset_pid(self, pid_state):
-        self.predictive_system.nodes[3].callable.reset(pid_state)
 
     def check_violations(self, x_pred):
         # Extract x and y coordinates
@@ -317,7 +328,7 @@ class Predictor:
         return outside_cylinder.unsqueeze(0).unsqueeze(0)
     
     def __call__(self, x, pid_state):
-        self.reset_pid(pid_state)
+        self.predictive_system.nodes[3].callable.reset(torch.clone(pid_state))
         initial_conditions = {'X': x.unsqueeze(0), 'R':self.r, 'Cyl':self.c, 'K': ptu.tensor([[[0]]])}
         with torch.no_grad():
             predictions = self.predictive_system(initial_conditions, retain_grad=False, print_loop=False)
@@ -327,7 +338,7 @@ class Predictor:
 
 def run_wp_p2p(
         Ti, Tf, Ts,
-        N_sf, N_pred, Tf_hzn,
+        N_sf, N_pred, Tf_hzn_sf, Tf_hzn_pred,
         integrator = 'euler',
         policy_save_path = 'data/',
         media_save_path = 'data/training/',
@@ -339,12 +350,12 @@ def run_wp_p2p(
     ctrl_params = get_ctrl_params()
     mlp_state_dict = torch.load(policy_save_path + 'wp_p2p_policy.pth')
 
-    safety_filter = SafetyFilter(state_dot.casadi_vectorized, Ts, Tf_hzn, N_sf, quad_params, euler.numpy)
+    safety_filter = SafetyFilter(state_dot.casadi_vectorized, Ts, Tf_hzn_sf, N_sf, quad_params, euler)
     R = reference.waypoint('wp_p2p', average_vel=1.0)
 
     node_list = get_nominal_control_system_nodes(quad_params, ctrl_params, Ts)
 
-    predictor = Predictor(quad_params, ctrl_params, Tf_hzn, N_pred, mlp_state_dict)
+    predictor = Predictor(quad_params, ctrl_params, Tf_hzn_pred, N_pred, mlp_state_dict)
     predictor_node = nm.system.Node(predictor, input_keys=['X', 'PID_X'], output_keys=['X_pred', 'U_pred', 'Violation'], name='predictor')
     node_list.append(predictor_node)
 
@@ -365,8 +376,8 @@ def run_wp_p2p(
     X[:,:,7] = 1.5 # xdot adversarial
     X[:,:,8] = 1.5 # ydot adversarial
 
-    X[:,:,0] = 0.9
-    X[:,:,1] = 0.9
+    # X[:,:,0] = 0.45
+    # X[:,:,1] = 0.45
     data = {
         'X': X,
         'R': torch.concatenate([ptu.from_numpy(R(1)[None,:][None,:].astype(np.float32))]*nsteps, axis=1),
@@ -407,17 +418,17 @@ if __name__ == "__main__":
     ptu.init_gpu(use_gpu=False)
 
     Ti, Tf, Ts = 0.0, 3.5, 0.001
-    N_sf = 100
+    N_sf = 500
     N_pred = 100
-    Tf_hzn = 0.1
-    integrator = 'euler'
+    Tf_hzn_sf, Tf_hzn_pred = 0.5, 0.1
+    integrator = euler
 
-    run_wp_p2p(Ti, Tf, Ts, N_sf, N_pred, Tf_hzn, integrator)
+    run_wp_p2p(Ti, Tf, Ts, N_sf, N_pred, Tf_hzn_sf, Tf_hzn_pred, integrator)
 
 
     quad_params = get_quad_params()
 
-    safety_filter = SafetyFilter(state_dot.casadi_vectorized, Ts, Tf_hzn, N, quad_params, euler.numpy)
+    safety_filter = SafetyFilter(state_dot.casadi_vectorized, Ts, Tf_hzn_sf, N_sf, quad_params, integrator)
     
     def example_usage():
         u_seq = np.array([[1., 1., 1., 1.]]*N)
