@@ -148,90 +148,6 @@ def plot_wp_p2p_train(output, test_trajectory, save_path=None):
     fig.savefig(save_path + f'{current_datetime}.png', dpi=300)  # Change the filename and dpi as needed
     plt.close(fig)  # This closes the figure and releases its resources.
 
-def plot_wp_p2p_train_old(output, test_trajectory, save_path=None):
-    # Extract x and y
-    x_positions = ptu.to_numpy(output['train_X'][:, :, 0])
-    y_positions = ptu.to_numpy(output['train_X'][:, :, 2])
-    x_ref = ptu.to_numpy(output['train_R'][:,-1,0])
-    y_ref = ptu.to_numpy(output['train_R'][:,-1,2])
-    try:
-        x_cyl = ptu.to_numpy(output['train_Cyl'][:,0,0])
-        y_cyl = ptu.to_numpy(output['train_Cyl'][:,0,1])
-        cylinder = True
-    except:
-        cylinder = False
-    num_lines = x_positions.shape[0]
-
-    # Choose a color map
-    colormap = plt.get_cmap('rainbow')
-
-    # Create color iterator
-    colors = [colormap(i) for i in np.linspace(0, 1, num_lines)]
-
-    fig, axs = plt.subplots(1,3,figsize=(15,5))
-    for idx, color in enumerate(colors):
-        # Plot the trajectory
-        axs[0].plot(x_positions[idx], y_positions[idx], color=color)
-        # Draw a circle at (1,1) with a radius of 0.5
-        if cylinder is True:
-            circle = Circle((x_cyl[idx], y_cyl[idx]), 0.5, fill=False, color=color)  # fill=False makes the circle hollow. Change to True if you want it filled.
-            axs[0].add_patch(circle)
-        # Plot a dot at the end_point, start point
-        axs[0].scatter(x_ref[idx], y_ref[idx], color=color)
-        axs[0].scatter(x_positions[idx,0], y_positions[idx,0], color=color)
-        # Setting equal scaling and showing the grid:
-        axs[0].set_aspect('equal', 'box')
-        axs[0].grid(True)
-
-
-
-    num_test_lines = test_trajectory['X'].shape[0]
-    axs[2] = fig.add_subplot(1, 3, 3, projection='3d')
-    # Draw the cylinder in the 3D subplot
-    z_upper = 2
-    z_lower = -2
-    draw_cylinder(axs[2], x_center=1, y_center=1, radius=0.5, depth=(z_upper - z_lower) / 2, z_center=(z_upper + z_lower) / 2)
- 
-    for idx in range(num_test_lines):
-        # plot the test trajectory next to the old one;
-        # Extract x and y
-        x_positions = test_trajectory['X'][idx, :, 0]
-        y_positions = test_trajectory['X'][idx, :, 2]
-        z_positions = -test_trajectory['X'][idx, :, 4]
-        # Convert the PyTorch tensors to numpy arrays
-        x_np = ptu.to_numpy(x_positions)
-        y_np = ptu.to_numpy(y_positions)
-        z_np = ptu.to_numpy(z_positions)
-
-        # Plot the trajectory
-        axs[1].plot(x_np, y_np, color='blue')
-        if cylinder is True:
-            # Draw a circle at (1,1) with a radius of 0.5
-            circle = Circle((1, 1), 0.5, fill=False, color='black')  # fill=False makes the circle hollow. Change to True if you want it filled.
-            axs[1].add_patch(circle)
-        # Plot a red dot at the point (2,2)
-        axs[1].scatter(2, 2, color='red')
-        # Setting equal scaling and showing the grid:
-        axs[1].set_aspect('equal', 'box')
-        axs[1].grid(True)
-        # Setting the axs[2] as 3D subplot
-        
-        # Plot the 3D trajectory in axs[2]
-        axs[2].plot(x_np, y_np, z_np, color='blue')
-
-        axs[2].set_xlim(-1.2, 2.2)
-        axs[2].set_ylim(-1.2, 2.2)
-        axs[2].set_zlim(-2, 2)
-        axs[2].scatter(2,2,-1, color='red')
-
-
-    # Save the figure
-    current_datetime = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-
-    fig.savefig(save_path + f'{current_datetime}.png', dpi=300)  # Change the filename and dpi as needed
-    plt.close(fig)  # This closes the figure and releases its resources.
-
-
 def plot_p2p_traj(output, trajectories, save_path):
 
     R = ptu.to_numpy(output['train_R'])
@@ -350,63 +266,6 @@ def plot_fig8_traj(output, trajectories, save_path):
     fig.savefig(save_path + f'{current_datetime}.png', dpi=300)  # Change the filename and dpi as needed
     plt.close(fig)  # This closes the figure and releases its resources.
 
-
-def plot_traj_old(output, trajectories, save_path):
-
-    # Extract x and y
-    x_positions = trajectories['X'][0, :, 0]
-    y_positions = trajectories['X'][0, :, 2]
-    z_positions = trajectories['X'][0, :, 4]
-    x_references = trajectories['R'][0, :, 0]
-    y_references = trajectories['R'][0, :, 2]
-    z_references = trajectories['R'][0, :, 4]
-
-    # Convert the PyTorch tensors to numpy arrays
-    x_np = ptu.to_numpy(x_positions)
-    y_np = ptu.to_numpy(y_positions)
-    z_np = ptu.to_numpy(z_positions)
-    xr_np = ptu.to_numpy(x_references)
-    yr_np = ptu.to_numpy(y_references)
-    zr_np = ptu.to_numpy(z_references)
-
-    # Create the main figure
-    fig = plt.figure(figsize=(15, 5))
-
-    # 3D subplot
-    ax1 = fig.add_subplot(131, projection='3d')  # 1 row, 3 columns, first plot
-    ax1.plot(x_np, y_np, z_np, label='Positions', color='blue')
-    ax1.plot(xr_np, yr_np, zr_np, label='References', color='red')
-    ax1.set_xlabel('X')
-    ax1.set_ylabel('Y')
-    ax1.set_zlabel('Z')
-    ax1.legend()
-    ax1.set_title('3D Trajectories')
-
-    # 2D subplot for X-Y plane
-    ax2 = fig.add_subplot(132)  # 1 row, 3 columns, second plot
-    ax2.plot(x_np, y_np, label='Positions', color='blue')
-    ax2.plot(xr_np, yr_np, label='References', color='red')
-    ax2.set_xlabel('X')
-    ax2.set_ylabel('Y')
-    ax2.legend()
-    ax2.set_title('X-Y Plane')
-
-    # 2D subplot for Y-Z plane
-    ax3 = fig.add_subplot(133)  # 1 row, 3 columns, third plot
-    ax3.plot(y_np, z_np, label='Positions', color='blue')
-    ax3.plot(yr_np, zr_np, label='References', color='red')
-    ax3.set_xlabel('Y')
-    ax3.set_ylabel('Z')
-    ax3.legend()
-    ax3.set_title('Y-Z Plane')
-
-    plt.tight_layout()
-
-    # Save the figure
-    current_datetime = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-
-    fig.savefig(save_path + f'{current_datetime}.png', dpi=300)  # Change the filename and dpi as needed
-    plt.close(fig)  # This closes the figure and releases its resources.
 
 class SinTrajCallback(Callback):
     def __init__(self, save_dir, media_path, nstep, nx, Ts):
@@ -615,6 +474,68 @@ class WP_Callback(Callback):
             'Cyl': Cyl,
             'Idx': Idx,
             'M': M
+        }
+
+        data = {key: value.to(ptu.device) for key, value in data.items()}
+
+        test_trajectory = trainer.model.nodes[0](data)
+
+        # plot_wp_p2p(trajectories, save_path=self.directory)]        
+        plot_wp_p2p_train(output, test_trajectory, save_path=self.directory)
+        plt.close()
+    
+    def animate(self):
+        # Gather all the PNG files
+        filenames = sorted([f for f in os.listdir(self.directory) if f.endswith('.png')])
+
+        # Convert the PNGs to GIF
+        with imageio.get_writer(self.directory + 'animation.gif', mode='I') as writer:
+            for filename in filenames:
+                image = imageio.imread(self.directory + filename)
+                writer.append_data(image)
+
+    def delete_all_but_last_image(self):
+        # List all .png files in the directory
+        all_files = [f for f in os.listdir(self.directory) if os.path.isfile(os.path.join(self.directory, f)) and f.endswith('.png')]
+
+        # Sort the files (they'll be sorted by date/time due to the filename format)
+        sorted_files = sorted(all_files)
+
+        # Delete all but the last one
+        for file in sorted_files[:-1]:  # Exclude the last file
+            os.remove(os.path.join(self.directory, file))
+
+
+class Attitude_Callback(Callback):
+    def __init__(self, save_dir, media_path, nstep, nx):
+        super().__init__()
+        self.directory = media_path + save_dir + '/'
+        self.nstep = nstep
+        self.nx = nx
+
+    def begin_eval(self, trainer, output):
+
+        # lets call the current trained model on the data we are interested in
+        x_lower = -1  # Replace with your actual lower bound
+        x_upper = 1   # Replace with your actual upper bound
+        n = 7  # Replace with your actual number of points
+
+        # Generate n linearly spaced x values between x_lower and x_upper
+        x_values = torch.linspace(x_lower, x_upper, n)
+        # Calculate corresponding y values using the line equation y = -x
+        y_values = -x_values
+        z_values = torch.zeros(n)
+        xdot_values = torch.zeros(n)
+        ydot_values = torch.zeros(n)
+        zdot_values = torch.zeros(n)
+        points = torch.stack((x_values, xdot_values, y_values, ydot_values, z_values, zdot_values), dim=-1)
+        X = points.unsqueeze(1)  # Example to make it (1, 1, n, 2)
+        
+        R = torch.cat([torch.cat([torch.tensor([[[2, 0, 2, 0, 1, 0]]])]*(self.nstep+1), dim=1)]*n, dim=0)
+
+        data = {
+            'X': X,
+            'R': R,
         }
 
         data = {key: value.to(ptu.device) for key, value in data.items()}

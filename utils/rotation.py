@@ -519,7 +519,11 @@ class quaternion_conjugate:
     
     @staticmethod
     def pytorch_vectorized(q):
-        return torch.hstack([q[:,0], -q[:,1:]])
+        return torch.hstack([q[:,:1], -q[:,1:]])
+    
+    @staticmethod
+    def neuromancer(q):
+        return torch.stack([q[:,:,:1], -q[:,:,1:]], dim=2)
     
 class quaternion_multiply:
 
@@ -583,6 +587,18 @@ class quaternion_multiply:
         #               [q[3], -q[2],  q[1],  q[0]]])
         mult = torch.bmm(Q, p.unsqueeze(-1)).squeeze(-1)
         return mult
+    
+    @staticmethod
+    def neuromancer(q, p):
+        row0 = torch.stack([q[:,:,0], -q[:,:,1], -q[:,:,2], -q[:,:,3]], dim=-1)
+        row1 = torch.stack([q[:,:,1],  q[:,:,0], -q[:,:,3],  q[:,:,2]], dim=-1)
+        row2 = torch.stack([q[:,:,2],  q[:,:,3],  q[:,:,0], -q[:,:,1]], dim=-1)
+        row3 = torch.stack([q[:,:,3], -q[:,:,2],  q[:,:,1],  q[:,:,0]], dim=-1)
+
+        Q = torch.stack([row0, row1, row2, row3], dim=-2)
+
+        mult = torch.squeeze(torch.bmm(Q, torch.unsqueeze(p, dim=-1)), dim=-1)
+        return mult 
 
 class quaternion_error:
 
@@ -597,6 +613,12 @@ class quaternion_error:
         # Calculate the quaternion error
         q_desired_conjugate = quaternion_conjugate.pytorch_vectorized(q_desired)
         return quaternion_multiply.pytorch_vectorized(q, q_desired_conjugate)
+
+    @staticmethod
+    def neuromancer(q, q_desired):
+        # Calculate the quaternion error
+        q_desired_conjugate = quaternion_conjugate.neuromancer(q_desired)
+        return quaternion_multiply.neuromancer(q, q_desired_conjugate)
 
 class quaternion_to_dcm:
 
