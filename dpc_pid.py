@@ -108,6 +108,8 @@ class AttitudeDynamics(ode.ODESystem):
 
         return torch.hstack([q_dot, omega_dot])
 
+
+
 def train_attitude_control(
     iterations,      # 2
     epochs,          # 15
@@ -275,7 +277,30 @@ class OmegadotDatasetGenerator:
 
     def get_dataset(self):
 
-        
+        pass
+
+class OmegadotDynamics(ode.ODESystem):
+    def __init__(self, insize, outsize) -> None:
+        super().__init__(insize=insize, outsize=outsize)
+
+        self.in_features = insize
+        self.out_features = outsize
+
+        self.Ixx, self.Iyy, self.Izz, self.Ixy, self.Ixz, self.Iyz = 1.0, 1.0, 1.0, 0, 0, 0
+
+        # Inertia matrix
+        self.I = ptu.tensor([[self.Ixx, self.Ixy, self.Ixz],
+                               [self.Ixy, self.Iyy, self.Iyz],
+                               [self.Ixz, self.Iyz, self.Izz]])
+
+        # Invert the inertia matrix
+        self.I_inv = torch.linalg.inv(self.I)
+
+    def ode_equations(self, x, u):
+        # x: rotors angular velocity {w1, w2, w3, w4}
+        # u: rotors angular acceleration {w1dot, w2dot, w3dot, w4dot}
+        pass
+
 
 if __name__ == "__main__":
 
