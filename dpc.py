@@ -9,6 +9,7 @@ import utils.pytorch as ptu
 import utils.callback
 import reference
 from utils.quad import Animator
+from utils.time import time_function
 
 from dynamics import mujoco_quad, get_quad_params
 from pid import PID, get_ctrl_params
@@ -395,6 +396,7 @@ def posVel2cyl(state, cyl, radius):
 
     return distance_to_cylinder, velocity_to_cylinder
 
+@time_function
 def train_wp_p2p(    # recommendations:
     iterations,      # 2
     epochs,          # 15
@@ -405,6 +407,7 @@ def train_wp_p2p(    # recommendations:
     Ts,              # 0.1
     policy_save_path = 'data/',
     media_save_path = 'data/training/',
+    save = False,
     ):
 
     # unchanging parameters:
@@ -553,8 +556,10 @@ def train_wp_p2p(    # recommendations:
         if "callable." in key:
             new_key = key.split("nodes.0.nodes.1.")[-1]
             policy_state_dict[new_key] = value
-    torch.save(policy_state_dict, policy_save_path + f"wp_p2p_policy.pth")
+    if save is True:
+        torch.save(policy_state_dict, policy_save_path + f"wp_p2p_policy.pth")
 
+@time_function
 def train_wp_traj(    # recommendations:
     iterations,      # 2
     epochs,          # 15
@@ -565,6 +570,7 @@ def train_wp_traj(    # recommendations:
     Ts,              # 0.1
     policy_save_path = 'data/',
     media_save_path = 'data/training/',
+    save = False
     ):
 
     # unchanging parameters:
@@ -710,8 +716,10 @@ def train_wp_traj(    # recommendations:
         if "callable." in key:
             new_key = key.split("nodes.0.nodes.1.")[-1]
             policy_state_dict[new_key] = value
-    torch.save(policy_state_dict, policy_save_path + f"wp_traj_policy.pth")
+    if save is True:
+        torch.save(policy_state_dict, policy_save_path + f"wp_traj_policy.pth")
 
+@time_function
 def train_fig8(    # recommendations:
     iterations,      # 2
     epochs,          # 15
@@ -722,6 +730,7 @@ def train_fig8(    # recommendations:
     Ts,              # 0.1
     policy_save_path = 'data/',
     media_save_path = 'data/training/',
+    save = False,
     ):
 
     # unchanging parameters:
@@ -872,13 +881,16 @@ def train_fig8(    # recommendations:
         if "callable." in key:
             new_key = key.split("nodes.0.nodes.1.")[-1]
             policy_state_dict[new_key] = value
-    torch.save(policy_state_dict, policy_save_path + f"fig8_policy.pth")
+    if save is True:
+        torch.save(policy_state_dict, policy_save_path + f"fig8_policy.pth")
 
+@time_function
 def run_wp_p2p(
         Ti, Tf, Ts,
         integrator = 'euler',
         policy_save_path = 'data/',
         media_save_path = 'data/training/',
+        save = False,
     ):
 
     times = np.arange(Ti, Tf, Ts)
@@ -945,21 +957,24 @@ def run_wp_p2p(
     u_history = np.stack(ptu.to_numpy(output['U'].squeeze()))
     r_history = np.stack(ptu.to_numpy(output['R'].squeeze()))
 
-    np.savez(
-        file = f"data/xu_fig8_mj_{str(Ts)}.npz",
-        x_history = x_history,
-        u_history = u_history,
-        r_history = r_history
-    )
+    if save is True:
+        np.savez(
+            file = f"data/xu_fig8_mj_{str(Ts)}.npz",
+            x_history = x_history,
+            u_history = u_history,
+            r_history = r_history
+        )
 
     animator = Animator(x_history, times, r_history, max_frames=500, save_path=media_save_path, state_prediction=None, drawCylinder=True)
     animator.animate()
 
+@time_function
 def run_wp_traj(
         Ti, Tf, Ts,
         integrator = 'euler',
         policy_save_path = 'data/',
         media_save_path = 'data/training/',
+        save = False,
     ):
 
     times = np.arange(Ti, Tf, Ts)
@@ -1032,21 +1047,24 @@ def run_wp_traj(
     u_history = np.stack(ptu.to_numpy(output['U'].squeeze()))
     r_history = np.stack(ptu.to_numpy(output['R'].squeeze()))
 
-    np.savez(
-        file = f"data/xu_fig8_mj_{str(Ts)}.npz",
-        x_history = x_history,
-        u_history = u_history,
-        r_history = r_history
-    )
+    if save is True:
+        np.savez(
+            file = f"data/xu_fig8_mj_{str(Ts)}.npz",
+            x_history = x_history,
+            u_history = u_history,
+            r_history = r_history
+        )
 
     animator = Animator(x_history, times, r_history, max_frames=500, save_path=media_save_path, state_prediction=None, drawCylinder=False)
     animator.animate()
 
+@time_function
 def run_fig8(
         Ti, Tf, Ts,
         integrator = 'euler',
         policy_save_path = 'data/',
         media_save_path = 'data/training/',
+        save = False,
     ):
 
     times = np.arange(Ti, Tf, Ts)
@@ -1116,12 +1134,13 @@ def run_fig8(
     u_history = np.stack(ptu.to_numpy(output['U'].squeeze()))
     r_history = np.stack(ptu.to_numpy(output['R'].squeeze()))
 
-    np.savez(
-        file = f"data/xu_fig8_mj_{str(Ts)}.npz",
-        x_history = x_history,
-        u_history = u_history,
-        r_history = r_history
-    )
+    if save is True:
+        np.savez(
+            file = f"data/xu_fig8_mj_{str(Ts)}.npz",
+            x_history = x_history,
+            u_history = u_history,
+            r_history = r_history
+        )
 
     animator = Animator(x_history, times, r_history, max_frames=500, save_path=media_save_path, state_prediction=None, drawCylinder=False, reference_type='fig8')
     animator.animate()
@@ -1137,35 +1156,13 @@ if __name__ == "__main__":
     np.random.seed(0)
     ptu.init_gpu(use_gpu=False)
 
-    train_wp_p2p(iterations=2, epochs=10, batch_size=5000, minibatch_size=10, nstep=100, lr=0.05, Ts=0.1)
+    # run_wp_p2p(0, 3.5, 0.001)
+    # run_wp_traj(0, 20.0, 0.001)
+    # run_fig8(0.0, 10.0, 0.001)
+
+    train_wp_p2p(iterations=2, epochs=10, batch_size=5000, minibatch_size=10, nstep=100, lr=0.05, Ts=0.1, save=False)
+    train_fig8(iterations=1, epochs=5, batch_size=5000, minibatch_size=10, nstep=100, lr=0.05, Ts=0.1, save=False)
+    train_wp_traj(iterations=1, epochs=10, batch_size=5000, minibatch_size=10, nstep=100, lr=0.05, Ts=0.1, save=False)
 
 
-    import time
-    # needs a .detach() in the system.forward method indata to not consume all of your RAM
-    # this cannot be on when training though, just for inference, running - nvm i made a new method to solve this
-    run_wp_p2p(0, 3.5, 0.001)
-    run_wp_traj(0, 20.0, 0.001)
-    run_fig8(0.0, 10.0, 0.001)
 
-    train_fig8(iterations=1, epochs=5, batch_size=5000, minibatch_size=10, nstep=100, lr=0.05, Ts=0.1)
-    train_wp_traj(iterations=1, epochs=10, batch_size=5000, minibatch_size=10, nstep=100, lr=0.05, Ts=0.1)
-    start_time = time.time()
-    end_time = time.time()
-    elapsed_time = end_time - start_time
-
-    print(f"Training elapsed time: {elapsed_time}")
-
-    """ This worked rather well, slight z SSE remained
-    torch.manual_seed(0)
-    np.random.seed(0)
-    ptu.init_gpu(use_gpu=False)
-
-    import time
-
-    start_time = time.time()
-    train_wp_p2p(iterations=3, epochs=10, batch_size=5000)
-    end_time = time.time()
-    elapsed_time = end_time - start_time
-
-    print(f"Training elapsed time: {elapsed_time}")
-    """
