@@ -14,3 +14,9 @@ training with prediction horizon: 100, lr: 0.05
 wp_p2p training 1485.83 s
 wp_traj training 457.03 s
 fig8 training 293.39 s
+
+# mpc
+
+wp_p2p with N = 30, Tf_hzn = 2.0, Ts = 0.001, Tf = 5.0
+Average Time: 293.80 seconds
+

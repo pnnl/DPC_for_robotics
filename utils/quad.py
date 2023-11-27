@@ -90,7 +90,7 @@ def draw_cylinder(ax, x_center=0, y_center=0, z_center=0, radius=1, depth=1, res
         return ax.plot_surface(x_grid, y_grid, z_grid, alpha=0.5, rstride=5, cstride=5, color='b')
     
 
-def plot_mujoco_trajectories_wp_p2p(outputs):
+def plot_mujoco_trajectories_wp_p2p(outputs, filename='data/paper/mujoco_trajectories.svg'):
     # Create a new figure for 3D plotting
     fig = plt.figure(figsize=(10,5))
     ax1 = fig.add_subplot(121, projection='3d')
@@ -131,7 +131,7 @@ def plot_mujoco_trajectories_wp_p2p(outputs):
     plt.subplots_adjust(wspace=0.65)  # Increase the width spacing
 
     # Save the figure
-    plt.savefig('data/paper/mujoco_trajectories.svg', format='svg')
+    plt.savefig(filename, format='svg')
     plt.close(fig)
 
     print('fin')

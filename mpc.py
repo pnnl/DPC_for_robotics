@@ -6,8 +6,22 @@ The MPC_Base class contains all the common parts of the CasADI MPC for the 3 con
 3. reference point tracking with obstacle constraints (MPC_Point_Ref_Obstacle)
 """
 
+# for the mpc itself
 import casadi as ca
 import numpy as np
+
+# for simulation
+import numpy as np
+from tqdm import tqdm
+import matplotlib.pyplot as plt
+
+import reference
+import utils.pytorch as ptu
+from dynamics import get_quad_params, state_dot, mujoco_quad
+from utils.integrate import euler, RK4, generate_variable_timesteps, generate_variable_times
+from utils.quad import Animator, plot_mujoco_trajectories_wp_p2p
+import torch
+import time
 
 class MPC:
     def __init__(
@@ -98,8 +112,8 @@ class MPC:
         self.opti.set_value(self.init, state)
 
         # calculate the adaptive dts
-        dts = self.adaptive_dts_Tf_hzn(state, reference)
-        self.opti.set_value(self.dts, dts)
+        # dts = self.adaptive_dts_Tf_hzn(state, reference)
+        # self.opti.set_value(self.dts, self.dts)
 
         # warm starting
         # reference_stack = np.array([np.linspace(state[i], reference[i,-1], self.N) for i in range(self.n)])
@@ -234,36 +248,115 @@ class MPC:
         # print(f"lookahead time: {sum(dts)}")
 
         return dts
-        
+
+def run_wp_p2p_mj(        
+        Ti, Tf, Ts, N, Tf_hzn, obstacle_opts,
+        integrator = 'euler',
+        policy_save_path = 'data/',
+        media_save_path = 'data/training/',
+        save = False,
+    ):
+
+    times = np.arange(Ti, Tf, Ts)
+    nstep = len(times)
+    quad_params = get_quad_params()
+    dts = generate_variable_timesteps(Ts, Tf_hzn, N)
+
+    mpc = MPC(N, Ts, Tf_hzn, dts, state_dot.casadi, quad_params, integrator, obstacle_opts)
+    mujoco_quad(state=quad_params["default_init_state_np"], quad_params=quad_params, Ti=Ti, Tf=Tf, Ts=Ts, integrator=integrator)
+    
+    npoints = 5  # Number of points you want to generate in 2 dimensions ie. 5 == (5x5 grid)
+    xy_values = ptu.from_numpy(np.linspace(-1, 1, npoints))  # Generates 'npoints' values between -10 and 10 for x
+    z_values = ptu.from_numpy(np.linspace(-1, 1, 1))
+    z_values = [ptu.tensor(0.)]
+
+    ref = reference.waypoint('wp_p2p', average_vel=0.1, set_vel_zero=False)
+    state = quad_params["default_init_state_np"]
+
+    true_times = np.arange(Ti, Tf, Ts)
+
+    num_runs = len(xy_values) * len(z_values)
+
+    outputs = []
+
+    start_time = time.time()
+    for xy in xy_values:
+        for z in z_values:
+            outputs.append({'X': [state], 'U': [np.zeros(4)]})
+            state = quad_params["default_init_state_np"]
+            state[0], state[1], state[2] = xy, -xy, z
+            for t in tqdm(true_times):
+                # print(t)
+                # for waypoint navigation stack the end reference point
+
+                # for wp_p2p
+                r = np.vstack([ref(1)]*(N+1)).T
+
+                # for wp_traj (only constant dts)
+                # times = generate_variable_times(t, dts)
+                # r = np.vstack([ref(time) for time in times]).T
+
+                cmd = mpc(state, r)
+                state = euler(state_dot.numpy, state, cmd, Ts, quad_params)
+
+                ctrl_predictions = mpc.get_predictions()
+                # ctrl_pred_x.append(ctrl_predictions[0])
+
+                outputs[-1]['X'].append(state)
+                outputs[-1]['U'].append(cmd)
+
+            outputs[-1]['X'] = ptu.from_numpy(np.vstack(outputs[-1]['X'])[None,:])
+            outputs[-1]['U'] = ptu.from_numpy(np.vstack(outputs[-1]['U'])[None,:])
+
+    end_time = time.time()
+    total_time = (end_time - start_time)
+    average_time = total_time / num_runs
+
+    print("Average Time: {:.2f} seconds".format(average_time))
+
+    np.savez(
+        file = f"data/xu_mpc_wp_p2p_mj_{str(Ts)}.npz",
+        x_history0 = ptu.to_numpy(outputs[0]['X'].squeeze()),
+        u_history0 = ptu.to_numpy(outputs[0]['U'].squeeze()),
+        x_history1 = ptu.to_numpy(outputs[1]['X'].squeeze()),
+        u_history1 = ptu.to_numpy(outputs[1]['U'].squeeze()),
+        x_history2 = ptu.to_numpy(outputs[2]['X'].squeeze()),
+        u_history2 = ptu.to_numpy(outputs[2]['U'].squeeze()),
+        x_history3 = ptu.to_numpy(outputs[3]['X'].squeeze()),
+        u_history3 = ptu.to_numpy(outputs[3]['U'].squeeze()),
+        x_history4 = ptu.to_numpy(outputs[4]['X'].squeeze()),
+        u_history4 = ptu.to_numpy(outputs[4]['U'].squeeze()),
+    )
+
+    plot_mujoco_trajectories_wp_p2p(outputs, 'data/paper/mpc_mujoco_trajectories.svg')
+
+    print('fin')
+
 if __name__ == "__main__":
 
-    import numpy as np
-    from tqdm import tqdm
-    import matplotlib.pyplot as plt
-    
-    import reference
-    import utils.pytorch as ptu
-    from dynamics import get_quad_params, state_dot
-    from utils.integrate import euler, RK4, generate_variable_timesteps, generate_variable_times
-    from utils.quad import Animator
 
     ptu.init_dtype()
     ptu.init_gpu()
 
-    quad_params = get_quad_params()
-
-    Ts = 0.1
-    Tf_hzn = 3.0
+    Ts = 0.001
+    Tf_hzn = 2.0
     N = 30
     Ti = 0.0
-    Tf = 15.0
+    Tf = 5.0
+    obstacle_opts = {'r': 0.5, 'x': 1, 'y': 1} # None
+
+
+    run_wp_p2p_mj(Ti,Tf,Ts,N,Tf_hzn,obstacle_opts)
+
+    quad_params = get_quad_params()
+
+
     integrator = "euler"
-    obstacle_opts = None # {'r': 0.5, 'x': 1, 'y': 1}
 
     dts = generate_variable_timesteps(Ts, Tf_hzn, N)
 
-    # reference = waypoint_reference('wp_p2p', average_vel=0.1, set_vel_zero=False)
-    ref = reference.waypoint('wp_traj', average_vel=1.0, set_vel_zero=False)
+    ref = reference.waypoint('wp_p2p', average_vel=0.1, set_vel_zero=False)
+    # ref = reference.waypoint('wp_traj', average_vel=1.0, set_vel_zero=False)
 
     state = quad_params["default_init_state_np"]
     ctrl = MPC(N, Ts, Tf_hzn, dts, state_dot.casadi, quad_params, integrator, obstacle_opts)
@@ -275,14 +368,14 @@ if __name__ == "__main__":
         # for waypoint navigation stack the end reference point
 
         # for wp_p2p
-        # r = np.vstack([reference(quad.t)]*(N+1)).T
+        r = np.vstack([ref(1)]*(N+1)).T
 
         # for wp_traj (only constant dts)
+        # times = generate_variable_times(t, dts)
+        # r = np.vstack([ref(time) for time in times]).T
 
-        times = generate_variable_times(t, dts)
-        r = np.vstack([ref(time) for time in times]).T
         cmd = ctrl(state, r)
-        state = euler.numpy(state_dot.numpy, state, cmd, Ts, quad_params)
+        state = euler(state_dot.numpy, state, cmd, Ts, quad_params)
 
         ctrl_predictions = ctrl.get_predictions()
         ctrl_pred_x.append(ctrl_predictions[0])
