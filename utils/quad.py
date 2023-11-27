@@ -92,7 +92,7 @@ def draw_cylinder(ax, x_center=0, y_center=0, z_center=0, radius=1, depth=1, res
 def plot_high_level_trajectories(outputs):
 
     # Create a new figure for 3D plotting
-    fig = plt.figure()
+    fig = plt.figure(figsize=(10,5))
     ax1 = fig.add_subplot(121, projection='3d')
     ax2 = fig.add_subplot(122)
 
@@ -129,6 +129,7 @@ def plot_high_level_trajectories(outputs):
 
     # Adjust spacing between the subplots
     plt.subplots_adjust(wspace=0.65)  # Increase the width spacing
+
 
     # Save the figure
     plt.savefig('data/paper/high_level_trajectories.svg', format='svg')
