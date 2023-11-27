@@ -9,7 +9,7 @@ from neuromancer.dynamics import ode, integrators
 import utils.pytorch as ptu
 import utils.callback
 import reference
-from utils.quad import Animator, plot_high_level_trajectories
+from utils.quad import Animator, plot_high_level_trajectories, plot_mujoco_trajectories_wp_p2p
 from utils.time import time_function
 from utils.integrate import euler, RK4
 from dynamics import state_dot
@@ -952,24 +952,52 @@ def run_wp_p2p_mj(
     cl_system.nodes[4].callable.set_state(ptu.to_numpy(data['X'].squeeze().squeeze()))
 
     # Perform CLP Simulation
-    output = cl_system.forward(data, retain_grad=False)
+    # output = cl_system.forward(data, retain_grad=False)
 
-    # save
-    print("saving the state and input histories...")
-    x_history = np.stack(ptu.to_numpy(output['X'].squeeze()))
-    u_history = np.stack(ptu.to_numpy(output['U'].squeeze()))
-    r_history = np.stack(ptu.to_numpy(output['R'].squeeze()))
+    # # save
+    # print("saving the state and input histories...")
+    # x_history = np.stack(ptu.to_numpy(output['X'].squeeze()))
+    # u_history = np.stack(ptu.to_numpy(output['U'].squeeze()))
+    # r_history = np.stack(ptu.to_numpy(output['R'].squeeze()))
 
-    if save is True:
-        np.savez(
-            file = f"data/xu_fig8_mj_{str(Ts)}.npz",
-            x_history = x_history,
-            u_history = u_history,
-            r_history = r_history
-        )
+    # if save is True:
+    #     np.savez(
+    #         file = f"data/xu_fig8_mj_{str(Ts)}.npz",
+    #         x_history = x_history,
+    #         u_history = u_history,
+    #         r_history = r_history
+    #     )
 
-    animator = Animator(x_history, times, r_history, max_frames=500, save_path=media_save_path, state_prediction=None, drawCylinder=True)
-    animator.animate()
+    npoints = 5  # Number of points you want to generate in 2 dimensions ie. 5 == (5x5 grid)
+    xy_values = ptu.from_numpy(np.linspace(-1, 1, npoints))  # Generates 'npoints' values between -10 and 10 for x
+    z_values = ptu.from_numpy(np.linspace(-1, 1, 1))
+    z_values = [ptu.tensor(0.)]
+
+    datasets = []
+    for xy in tqdm(xy_values):
+        for z in z_values:
+            datasets.append({
+                'X': ptu.tensor([[[xy,-xy,z,1,0,0,0,0,0,0,0,0,0,*[522.9847140714692]*4]]]),
+                'R': torch.concatenate([ptu.from_numpy(R(1)[None,:][None,:].astype(np.float32))]*nstep, axis=1),
+                'Cyl': ptu.tensor([[[1,1]]*nstep]),
+            })
+
+    # load the pretrained policy
+    mlp_state_dict = torch.load(policy_save_path + 'wp_p2p_policy.pth')
+    cl_system.nodes[1].load_state_dict(mlp_state_dict)
+
+    # Perform CLP Simulation
+    outputs = []
+    for data in tqdm(datasets):
+        # set the mujoco simulation to the correct initial conditions
+        cl_system.nodes[4].callable.set_state(ptu.to_numpy(data['X'].squeeze().squeeze()))
+        cl_system.nodes[3].callable.reset(None)
+        outputs.append(cl_system.forward(data, retain_grad=False))
+
+    plot_mujoco_trajectories_wp_p2p(outputs)
+
+    # animator = Animator(x_history, times, r_history, max_frames=500, save_path=media_save_path, state_prediction=None, drawCylinder=True)
+    # animator.animate()
 
 @time_function
 def run_wp_traj_mj(
@@ -1226,10 +1254,10 @@ if __name__ == "__main__":
     np.random.seed(0)
     ptu.init_gpu(use_gpu=False)
 
-    run_wp_p2p_hl(0, 5, 0.001)
-    # run_wp_p2p_mj(0, 3.5, 0.001)
-    # run_wp_traj_mj(0, 20.0, 0.001)
-    # run_fig8_mj(0.0, 10.0, 0.001)
+    # run_wp_p2p_hl(0, 5, 0.001)
+    run_wp_p2p_mj(0, 5.0, 0.001)
+    run_wp_traj_mj(0, 20.0, 0.001)
+    run_fig8_mj(0.0, 10.0, 0.001)
 
     train_wp_p2p(iterations=2, epochs=10, batch_size=5000, minibatch_size=10, nstep=100, lr=0.05, Ts=0.1, save=False)
     train_fig8(iterations=1, epochs=5, batch_size=5000, minibatch_size=10, nstep=100, lr=0.05, Ts=0.1, save=False)

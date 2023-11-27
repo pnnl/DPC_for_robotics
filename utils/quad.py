@@ -89,6 +89,53 @@ def draw_cylinder(ax, x_center=0, y_center=0, z_center=0, radius=1, depth=1, res
         y_grid = radius*np.sin(theta_grid) + y_center
         return ax.plot_surface(x_grid, y_grid, z_grid, alpha=0.5, rstride=5, cstride=5, color='b')
     
+
+def plot_mujoco_trajectories_wp_p2p(outputs):
+    # Create a new figure for 3D plotting
+    fig = plt.figure(figsize=(10,5))
+    ax1 = fig.add_subplot(121, projection='3d')
+    ax2 = fig.add_subplot(122)
+
+    for output in outputs:
+        # Plot trajectories
+        x = ptu.to_numpy(output['X'][0,1:,0])
+        y = ptu.to_numpy(output['X'][0,1:,1])
+        z = ptu.to_numpy(output['X'][0,1:,2])
+        ax1.plot(x, y, z, label='Trajectory')
+        ax2.plot(x, y, label='Top-down view')
+
+    draw_cylinder(ax1, 1, 1, 0, 0.5, 1, 100)
+
+    # Setting labels and title
+    ax1.set_xlabel('X axis')
+    ax1.set_ylabel('Y axis')
+    ax1.set_zlabel('Z axis')
+    # ax.set_title('3D Trajectories with Cylinder')
+
+    # Add a red dot at (2, 2, 1)
+    ax1.scatter(2, 2, 1, color='red', s=30)
+
+    circle = plt.Circle((1, 1), 0.5, color='r', fill=False)
+    ax2.add_patch(circle)
+
+    ax2.set_xlabel('X axis')
+    ax2.set_ylabel('Y axis')
+    # ax2.set_title('Top-Down View with Circle')
+    ax2.set_aspect('equal', 'box')
+    ax2.grid()
+
+    # Add a red dot at (2, 2) for the 2D view
+    ax2.scatter(2, 2, color='red', s=30)
+
+    # Adjust spacing between the subplots
+    plt.subplots_adjust(wspace=0.65)  # Increase the width spacing
+
+    # Save the figure
+    plt.savefig('data/paper/mujoco_trajectories.svg', format='svg')
+    plt.close(fig)
+
+    print('fin')
+
 def plot_high_level_trajectories(outputs):
 
     # Create a new figure for 3D plotting
