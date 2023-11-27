@@ -3,13 +3,16 @@ from datetime import datetime
 import torch
 import numpy as np
 import neuromancer as nm
+from tqdm import tqdm
 from neuromancer.dynamics import ode, integrators
 
 import utils.pytorch as ptu
 import utils.callback
 import reference
-from utils.quad import Animator
+from utils.quad import Animator, plot_high_level_trajectories
 from utils.time import time_function
+from utils.integrate import euler, RK4
+from dynamics import state_dot
 
 from dynamics import mujoco_quad, get_quad_params
 from pid import PID, get_ctrl_params
@@ -885,7 +888,7 @@ def train_fig8(    # recommendations:
         torch.save(policy_state_dict, policy_save_path + f"fig8_policy.pth")
 
 @time_function
-def run_wp_p2p(
+def run_wp_p2p_mj(
         Ti, Tf, Ts,
         integrator = 'euler',
         policy_save_path = 'data/',
@@ -969,7 +972,7 @@ def run_wp_p2p(
     animator.animate()
 
 @time_function
-def run_wp_traj(
+def run_wp_traj_mj(
         Ti, Tf, Ts,
         integrator = 'euler',
         policy_save_path = 'data/',
@@ -1059,7 +1062,7 @@ def run_wp_traj(
     animator.animate()
 
 @time_function
-def run_fig8(
+def run_fig8_mj(
         Ti, Tf, Ts,
         integrator = 'euler',
         policy_save_path = 'data/',
@@ -1145,6 +1148,73 @@ def run_fig8(
     animator = Animator(x_history, times, r_history, max_frames=500, save_path=media_save_path, state_prediction=None, drawCylinder=False, reference_type='fig8')
     animator.animate()
 
+@time_function
+def run_wp_p2p_hl(
+        Ti, Tf, Ts,
+        integrator = 'euler',
+        policy_save_path = 'data/',
+        media_save_path = 'data/training/',
+        save = False,
+    ):
+
+    times = np.arange(Ti, Tf, Ts)
+    nstep = len(times)
+    quad_params = get_quad_params()
+    ctrl_params = get_ctrl_params()
+
+    node_list = []
+
+    def process_policy_input(x, r, c, radius=0.5):
+        x_r = torch.clip(x, min=ptu.tensor(-3.), max=ptu.tensor(3.))
+        r_r = torch.clip(r, min=ptu.tensor(-3.), max=ptu.tensor(3.))
+        c_pos, c_vel = posVel2cyl(x_r, c, radius)
+        return torch.hstack([r_r - x_r, c_pos, c_vel])
+    process_policy_input_node = nm.system.Node(process_policy_input, ['X', 'R', 'Cyl'], ['Obs'], name='state_selector')
+    node_list.append(process_policy_input_node)
+
+    mlp = nm.modules.blocks.MLP(6 + 2, 3, bias=True,
+                    linear_map=torch.nn.Linear,
+                    nonlin=torch.nn.ReLU,
+                    hsizes=[20, 20, 20, 20]).to(ptu.device)
+    policy_node = nm.system.Node(mlp, ['Obs'], ['U'], name='mlp')
+    node_list.append(policy_node)
+
+    dynamics = Dynamics(9, 6)
+    sys = lambda x, u: euler(dynamics.ode_equations, x, u, Ts)
+    sys_node = nm.system.Node(sys, input_keys=['X', 'U'], output_keys=['X'], name='dynamics')
+    node_list.append(sys_node)
+
+    cl_system = nm.system.System(node_list, nsteps=nstep)
+
+    npoints = 5  # Number of points you want to generate in 2 dimensions ie. 5 == (5x5 grid)
+    xy_values = ptu.from_numpy(np.linspace(-1, 1, npoints))  # Generates 'npoints' values between -10 and 10 for x
+    z_values = ptu.from_numpy(np.linspace(-1, 1, npoints))
+
+    datasets = []
+    for xy in tqdm(xy_values):
+        for z in z_values:
+            datasets.append({
+                'X': ptu.tensor([[[xy,0,-xy,0,z,0]]]),
+                'R': ptu.tensor([[[2,0,2,0,1,0]]*nstep]),
+                'Cyl': ptu.tensor([[[1,1]]*nstep]),
+            })
+
+    # load the pretrained policy
+    mlp_state_dict = torch.load(policy_save_path + 'wp_p2p_policy.pth')
+    cl_system.nodes[1].load_state_dict(mlp_state_dict)
+
+    # Perform CLP Simulation
+    outputs = []
+    for data in tqdm(datasets):
+        outputs.append(cl_system.forward(data, retain_grad=False))
+
+    plot_high_level_trajectories(outputs)
+
+    print('fin')
+
+    # animator = Animator(x_history, times, r_history, max_frames=500, save_path=media_save_path, state_prediction=None, drawCylinder=True)
+    # animator.animate()
+
 if __name__ == "__main__":
 
     # best setup below for T1 desktop
@@ -1156,9 +1226,10 @@ if __name__ == "__main__":
     np.random.seed(0)
     ptu.init_gpu(use_gpu=False)
 
-    # run_wp_p2p(0, 3.5, 0.001)
-    # run_wp_traj(0, 20.0, 0.001)
-    # run_fig8(0.0, 10.0, 0.001)
+    run_wp_p2p_hl(0, 5, 0.001)
+    # run_wp_p2p_mj(0, 3.5, 0.001)
+    # run_wp_traj_mj(0, 20.0, 0.001)
+    # run_fig8_mj(0.0, 10.0, 0.001)
 
     train_wp_p2p(iterations=2, epochs=10, batch_size=5000, minibatch_size=10, nstep=100, lr=0.05, Ts=0.1, save=False)
     train_fig8(iterations=1, epochs=5, batch_size=5000, minibatch_size=10, nstep=100, lr=0.05, Ts=0.1, save=False)

@@ -81,6 +81,61 @@ class applyMixerFM:
         
         return w_cmd
 
+def draw_cylinder(ax, x_center=0, y_center=0, z_center=0, radius=1, depth=1, resolution=100):
+        z = np.linspace(z_center - depth, z_center + depth, resolution)
+        theta = np.linspace(0, 2*np.pi, resolution)
+        theta_grid, z_grid=np.meshgrid(theta, z)
+        x_grid = radius*np.cos(theta_grid) + x_center
+        y_grid = radius*np.sin(theta_grid) + y_center
+        return ax.plot_surface(x_grid, y_grid, z_grid, alpha=0.5, rstride=5, cstride=5, color='b')
+    
+def plot_high_level_trajectories(outputs):
+
+    # Create a new figure for 3D plotting
+    fig = plt.figure()
+    ax1 = fig.add_subplot(121, projection='3d')
+    ax2 = fig.add_subplot(122)
+
+    for output in outputs:
+        # Plot trajectories
+        x = ptu.to_numpy(output['X'][0,:,0])
+        y = ptu.to_numpy(output['X'][0,:,2])
+        z = ptu.to_numpy(output['X'][0,:,4])
+        ax1.plot(x, y, z, label='Trajectory')
+        ax2.plot(x, y, label='Top-down view')
+
+    draw_cylinder(ax1, 1, 1, 0, 0.5, 1, 100)
+
+    # Setting labels and title
+    ax1.set_xlabel('X axis')
+    ax1.set_ylabel('Y axis')
+    ax1.set_zlabel('Z axis')
+    # ax.set_title('3D Trajectories with Cylinder')
+
+    # Add a red dot at (2, 2, 1)
+    ax1.scatter(2, 2, 1, color='red', s=30)
+
+    circle = plt.Circle((1, 1), 0.5, color='r', fill=False)
+    ax2.add_patch(circle)
+
+    ax2.set_xlabel('X axis')
+    ax2.set_ylabel('Y axis')
+    # ax2.set_title('Top-Down View with Circle')
+    ax2.set_aspect('equal', 'box')
+    ax2.grid()
+
+    # Add a red dot at (2, 2) for the 2D view
+    ax2.scatter(2, 2, color='red', s=30)
+
+    # Adjust spacing between the subplots
+    plt.subplots_adjust(wspace=0.65)  # Increase the width spacing
+
+    # Save the figure
+    plt.savefig('data/paper/high_level_trajectories.svg', format='svg')
+    plt.close(fig)
+
+    print('fin')
+
 class Animator:
     def __init__(
             self,
@@ -209,13 +264,13 @@ class Animator:
 
         title = self.ax.text2D(0.95, 0.95, 'Trajectory', transform=self.ax.transAxes, horizontalalignment='right')
 
-    def draw_cylinder(self, x_center=0, y_center=0, z_center=0, radius=1, depth=1, resolution=100):
-        z = np.linspace(z_center - depth, z_center + depth, resolution)
-        theta = np.linspace(0, 2*np.pi, resolution)
-        theta_grid, z_grid=np.meshgrid(theta, z)
-        x_grid = radius*np.cos(theta_grid) + x_center
-        y_grid = radius*np.sin(theta_grid) + y_center
-        return self.ax.plot_surface(x_grid, y_grid, z_grid, alpha=0.5, rstride=5, cstride=5, color='b')
+#     def draw_cylinder(self, x_center=0, y_center=0, z_center=0, radius=1, depth=1, resolution=100):
+#         z = np.linspace(z_center - depth, z_center + depth, resolution)
+#         theta = np.linspace(0, 2*np.pi, resolution)
+#         theta_grid, z_grid=np.meshgrid(theta, z)
+#         x_grid = radius*np.cos(theta_grid) + x_center
+#         y_grid = radius*np.sin(theta_grid) + y_center
+#         return self.ax.plot_surface(x_grid, y_grid, z_grid, alpha=0.5, rstride=5, cstride=5, color='b')
     
     def draw_sphere(self, x_center=0, y_center=0, z_center=0, radius=1, resolution=100):
         u = np.linspace(0, 2 * np.pi, resolution)
@@ -297,7 +352,7 @@ class Animator:
 
         # Draw a cylinder at a given location
         if self.drawCylinder:
-            self.cylinder = self.draw_cylinder(x_center=1, y_center=1, radius=0.5, depth=2)
+            self.cylinder = draw_cylinder(self.ax, x_center=1, y_center=1, radius=0.5, depth=2)
 
         # remove the old cylinder if it exists
         if self.sphere is not None:
