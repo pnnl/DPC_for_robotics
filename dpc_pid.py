@@ -108,8 +108,6 @@ class AttitudeDynamics(ode.ODESystem):
 
         return torch.hstack([q_dot, omega_dot])
 
-
-
 def train_attitude_control(
     iterations,      # 2
     epochs,          # 15
@@ -300,6 +298,7 @@ class OmegadotDynamics(ode.ODESystem):
         # x: rotors angular velocity {w1, w2, w3, w4}
         # u: rotors angular acceleration {w1dot, w2dot, w3dot, w4dot}
         pass
+
 
 
 if __name__ == "__main__":

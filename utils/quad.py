@@ -88,7 +88,12 @@ def draw_cylinder(ax, x_center=0, y_center=0, z_center=0, radius=1, depth=1, res
         x_grid = radius*np.cos(theta_grid) + x_center
         y_grid = radius*np.sin(theta_grid) + y_center
         return ax.plot_surface(x_grid, y_grid, z_grid, alpha=0.5, rstride=5, cstride=5, color='b')
-    
+
+def calculate_mpc_cost(x_history, u_history, r_history):
+    Q = np.diag([1,1,1,0,0,0,0,1,1,1,1,1,1,0,0,0,0])
+    R = np.diag([1,1,1,1])
+    x_e = r_history - x_history
+    return (x_e @ Q @ x_e.T).trace() + (u_history @ R @ u_history.T).trace()
 
 def plot_mujoco_trajectories_wp_p2p(outputs, filename='data/paper/mujoco_trajectories.svg'):
     # Create a new figure for 3D plotting
@@ -112,8 +117,8 @@ def plot_mujoco_trajectories_wp_p2p(outputs, filename='data/paper/mujoco_traject
     ax1.set_zlabel('Z axis')
     # ax.set_title('3D Trajectories with Cylinder')
 
-    # Add a red dot at (2, 2, 1)
-    ax1.scatter(2, 2, 1, color='red', s=30)
+    # Add a red dot at (2, 2, -1)
+    ax1.scatter(2, 2, -1, color='red', s=30)
 
     circle = plt.Circle((1, 1), 0.5, color='r', fill=False)
     ax2.add_patch(circle)

@@ -19,7 +19,7 @@ import reference
 import utils.pytorch as ptu
 from dynamics import get_quad_params, state_dot, mujoco_quad
 from utils.integrate import euler, RK4, generate_variable_timesteps, generate_variable_times
-from utils.quad import Animator, plot_mujoco_trajectories_wp_p2p
+from utils.quad import Animator, plot_mujoco_trajectories_wp_p2p, calculate_mpc_cost
 import torch
 import time
 
@@ -244,9 +244,6 @@ class MPC:
         d = (2 * (Tf_hzn/self.N) - 2 * self.Ts) / (self.N - 1)
         dts = [self.Ts + i * d for i in range(self.N)]
 
-        # print(f"dts_delta: {dts[-1] - dts[0]}")
-        # print(f"lookahead time: {sum(dts)}")
-
         return dts
 
 def run_wp_p2p_mj(        
@@ -279,6 +276,11 @@ def run_wp_p2p_mj(
 
     outputs = []
 
+    # just for wp_p2p
+    r = ref(1)
+    r[2]*=-1
+    r = np.vstack([r]*(N+1)).T
+
     start_time = time.time()
     for xy in xy_values:
         for z in z_values:
@@ -290,7 +292,7 @@ def run_wp_p2p_mj(
                 # for waypoint navigation stack the end reference point
 
                 # for wp_p2p
-                r = np.vstack([ref(1)]*(N+1)).T
+
 
                 # for wp_traj (only constant dts)
                 # times = generate_variable_times(t, dts)
@@ -313,6 +315,9 @@ def run_wp_p2p_mj(
     average_time = total_time / num_runs
 
     print("Average Time: {:.2f} seconds".format(average_time))
+    x_histories = [ptu.to_numpy(outputs[i]['X'].squeeze()) for i in range(num_runs)]
+    u_histories = [ptu.to_numpy(outputs[i]['U'].squeeze()) for i in range(num_runs)]
+    r_histories = [np.vstack([ref(1)]*(nstep+1))]*num_runs
 
     np.savez(
         file = f"data/xu_mpc_wp_p2p_mj_{str(Ts)}.npz",
@@ -330,6 +335,9 @@ def run_wp_p2p_mj(
 
     plot_mujoco_trajectories_wp_p2p(outputs, 'data/paper/mpc_mujoco_trajectories.svg')
 
+    average_cost = np.mean([calculate_mpc_cost(x_history, u_history, r_history) for (x_history, u_history, r_history) in zip(x_histories, u_histories, r_histories)])
+
+    print("Average MPC Cost: {:.2f}".format(average_cost))
     print('fin')
 
 if __name__ == "__main__":
@@ -340,17 +348,14 @@ if __name__ == "__main__":
 
     Ts = 0.001
     Tf_hzn = 2.0
-    N = 30
+    N = 2000
     Ti = 0.0
     Tf = 5.0
     obstacle_opts = {'r': 0.5, 'x': 1, 'y': 1} # None
 
-
     run_wp_p2p_mj(Ti,Tf,Ts,N,Tf_hzn,obstacle_opts)
 
     quad_params = get_quad_params()
-
-
     integrator = "euler"
 
     dts = generate_variable_timesteps(Ts, Tf_hzn, N)
