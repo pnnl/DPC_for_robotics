@@ -141,6 +141,49 @@ def plot_mujoco_trajectories_wp_p2p(outputs, filename='data/paper/mujoco_traject
 
     print('fin')
 
+def plot_mujoco_trajectories_wp_traj(outputs, filename='data/paper/mujoco_trajectories.svg'):
+    # Create a new figure for 3D plotting
+    fig = plt.figure(figsize=(10,5))
+    ax1 = fig.add_subplot(121, projection='3d')
+    ax2 = fig.add_subplot(122)
+
+    for output in outputs:
+        # Plot trajectories
+        x = ptu.to_numpy(output['X'][0,1:,0])
+        y = -ptu.to_numpy(output['X'][0,1:,1])
+        z = -ptu.to_numpy(output['X'][0,1:,2])
+
+        xr = ptu.to_numpy(output['R'][0,1:,0])
+        yr = -ptu.to_numpy(output['R'][0,1:,1])
+        zr = -ptu.to_numpy(output['R'][0,1:,2])
+
+        ax1.plot(x, y, z, label='Trajectory')
+        ax1.plot(xr, yr, zr, 'g--',label='Reference')
+        ax2.plot(x, y, label='Trajectory')
+        ax2.plot(xr, yr, 'g--', label='Reference')
+
+    # Setting labels and title
+    ax1.set_xlabel('X axis')
+    ax1.set_ylabel('Y axis')
+    ax1.set_zlabel('Z axis')
+    ax1.legend()
+    # ax.set_title('3D Trajectories with Cylinder')
+
+    ax2.set_xlabel('X axis')
+    ax2.set_ylabel('Y axis')
+    # ax2.set_title('Top-Down View with Circle')
+    ax2.set_aspect('equal', 'box')
+    ax2.grid()
+
+    # Adjust spacing between the subplots
+    plt.subplots_adjust(wspace=0.65)  # Increase the width spacing
+
+    # Save the figure
+    plt.savefig(filename, format='svg')
+    plt.close(fig)
+
+    print('fin')
+
 def plot_high_level_trajectories(outputs):
 
     # Create a new figure for 3D plotting
