@@ -158,9 +158,9 @@ def plot_mujoco_trajectories_wp_traj(outputs, filename='data/paper/mujoco_trajec
         zr = -ptu.to_numpy(output['R'][0,1:,2])
 
         ax1.plot(x, y, z, label='Trajectory')
-        ax1.plot(xr, yr, zr, 'g--',label='Reference')
+        ax1.plot(xr, yr, zr, 'm--',label='Reference')
         ax2.plot(x, y, label='Trajectory')
-        ax2.plot(xr, yr, 'g--', label='Reference')
+        ax2.plot(xr, yr, 'm--', label='Reference')
 
     # Setting labels and title
     ax1.set_xlabel('X axis')
@@ -168,6 +168,11 @@ def plot_mujoco_trajectories_wp_traj(outputs, filename='data/paper/mujoco_trajec
     ax1.set_zlabel('Z axis')
     ax1.legend()
     # ax.set_title('3D Trajectories with Cylinder')
+    ax1.scatter(3, 2, -1, color='red', s=30)
+    ax1.scatter(0, 0, 0, color='green', s=30)
+
+    ax2.scatter(3, 2, color='red', s=30)
+    ax2.scatter(0, 0, color='green', s=30)
 
     ax2.set_xlabel('X axis')
     ax2.set_ylabel('Y axis')
