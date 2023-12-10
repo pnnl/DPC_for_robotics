@@ -246,7 +246,7 @@ class MPC:
 
         return dts
 
-def run_wp_p2p_mj(        
+def run_wp_p2p_mj_many(        
         Ti, Tf, Ts, N, Tf_hzn, obstacle_opts,
         integrator = 'euler',
         policy_save_path = 'data/',
@@ -416,6 +416,85 @@ def run_wp_traj_mj(
 
     print('fin')
 
+def run_wp_p2p_mj(        
+        Ti, Tf, Ts, N, Tf_hzn, obstacle_opts,
+        integrator = 'euler',
+        policy_save_path = 'data/',
+        media_save_path = 'data/training/',
+        save = False,
+    ):
+
+    times = np.arange(Ti, Tf, Ts)
+    nstep = len(times)
+    quad_params = get_quad_params()
+    dts = generate_variable_timesteps(Ts, Tf_hzn, N)
+
+    mpc = MPC(N, Ts, Tf_hzn, dts, state_dot.casadi, quad_params, integrator, obstacle_opts)
+    mujoco_quad(state=quad_params["default_init_state_np"], quad_params=quad_params, Ti=Ti, Tf=Tf, Ts=Ts, integrator=integrator)
+    
+    npoints = 1  # Number of points you want to generate in 2 dimensions ie. 5 == (5x5 grid)
+    xy_values = ptu.from_numpy(np.linspace(0, 0, npoints))  # Generates 'npoints' values between -10 and 10 for x
+    z_values = [ptu.tensor(0.)]
+
+    ref = reference.waypoint('wp_p2p', average_vel=0.1, set_vel_zero=False)
+    state = quad_params["default_init_state_np"]
+
+    true_times = np.arange(Ti, Tf, Ts)
+
+    num_runs = len(xy_values) * len(z_values)
+
+    outputs = []
+
+    # just for wp_p2p
+    r = ref(1)
+    r[2]*=-1
+    r = np.vstack([r]*(N+1)).T
+
+    start_time = time.time()
+    for xy in xy_values:
+        for z in z_values:
+            outputs.append({'X': [state], 'U': [np.zeros(4)]})
+            state = quad_params["default_init_state_np"]
+            state[0], state[1], state[2] = xy, -xy, z
+            for t in tqdm(true_times):
+                # print(t)
+                # for waypoint navigation stack the end reference point
+
+                # for wp_p2p
+
+
+                # for wp_traj (only constant dts)
+                # times = generate_variable_times(t, dts)
+                # r = np.vstack([ref(time) for time in times]).T
+
+                cmd = mpc(state, r)
+                state = euler(state_dot.numpy, state, cmd, Ts, quad_params)
+
+                ctrl_predictions = mpc.get_predictions()
+                # ctrl_pred_x.append(ctrl_predictions[0])
+
+                outputs[-1]['X'].append(state)
+                outputs[-1]['U'].append(cmd)
+
+            outputs[-1]['X'] = ptu.from_numpy(np.vstack(outputs[-1]['X'])[None,:])
+            outputs[-1]['U'] = ptu.from_numpy(np.vstack(outputs[-1]['U'])[None,:])
+
+    end_time = time.time()
+    total_time = (end_time - start_time)
+    average_time = total_time / num_runs
+
+    print("Average Time: {:.2f} seconds".format(average_time))
+    x_histories = [ptu.to_numpy(outputs[i]['X'].squeeze()) for i in range(num_runs)]
+    u_histories = [ptu.to_numpy(outputs[i]['U'].squeeze()) for i in range(num_runs)]
+    r_histories = [np.vstack([ref(1)]*(nstep+1))]*num_runs
+
+    plot_mujoco_trajectories_wp_p2p(outputs, 'data/paper/mpc_mujoco_trajectories.svg')
+
+    average_cost = np.mean([calculate_mpc_cost(x_history, u_history, r_history) for (x_history, u_history, r_history) in zip(x_histories, u_histories, r_histories)])
+
+    print("Average MPC Cost: {:.2f}".format(average_cost))
+    print('fin')
+
 if __name__ == "__main__":
 
 
@@ -424,13 +503,14 @@ if __name__ == "__main__":
 
     Ts = 0.001
     Tf_hzn = 2.0
-    N = 30
+    N = 2000
     Ti = 0.0
     Tf = 5.0
     obstacle_opts = {'r': 0.5, 'x': 1, 'y': 1} # None
 
-    run_wp_traj_mj(Ti,20,Ts,30,0.5)
     run_wp_p2p_mj(Ti,Tf,Ts,N,Tf_hzn,obstacle_opts)
+    # run_wp_traj_mj(Ti,20,Ts,500,0.5)
+    run_wp_p2p_mj_many(Ti,Tf,Ts,N,Tf_hzn,obstacle_opts)
 
     quad_params = get_quad_params()
     integrator = "euler"
