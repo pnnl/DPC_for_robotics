@@ -6,6 +6,8 @@ The MPC_Base class contains all the common parts of the CasADI MPC for the 3 con
 3. reference point tracking with obstacle constraints (MPC_Point_Ref_Obstacle)
 """
 
+from typing import Any
+
 # for the mpc itself
 import casadi as ca
 import numpy as np
@@ -22,6 +24,7 @@ from utils.integrate import euler, RK4, generate_variable_timesteps, generate_va
 from utils.quad import Animator, plot_mujoco_trajectories_wp_p2p, calculate_mpc_cost, plot_mujoco_trajectories_wp_traj
 import torch
 import time
+
 
 class MPC:
     def __init__(
@@ -411,8 +414,8 @@ def run_wp_traj_mj(
 
     print("Average MPC Cost: {:.2f}".format(average_cost))
 
-    # animator = Animator(x_histories[0], true_times, x_histories[0], max_frames=500, save_path='data', state_prediction=ctrl_pred_x, drawCylinder=False)
-    # animator.animate()
+    animator = Animator(x_histories[0], true_times, r_histories[0], max_frames=500, save_path='data', state_prediction=ctrl_pred_x, drawCylinder=False)
+    animator.animate()
 
     print('fin')
 
@@ -444,6 +447,7 @@ def run_wp_p2p_mj(
     num_runs = len(xy_values) * len(z_values)
 
     outputs = []
+    ctrl_pred_x = []
 
     # just for wp_p2p
     r = ref(1)
@@ -457,21 +461,12 @@ def run_wp_p2p_mj(
             state = quad_params["default_init_state_np"]
             state[0], state[1], state[2] = xy, -xy, z
             for t in tqdm(true_times):
-                # print(t)
-                # for waypoint navigation stack the end reference point
-
-                # for wp_p2p
-
-
-                # for wp_traj (only constant dts)
-                # times = generate_variable_times(t, dts)
-                # r = np.vstack([ref(time) for time in times]).T
 
                 cmd = mpc(state, r)
                 state = euler(state_dot.numpy, state, cmd, Ts, quad_params)
 
                 ctrl_predictions = mpc.get_predictions()
-                # ctrl_pred_x.append(ctrl_predictions[0])
+                ctrl_pred_x.append(ctrl_predictions[0])
 
                 outputs[-1]['X'].append(state)
                 outputs[-1]['U'].append(cmd)
@@ -487,13 +482,30 @@ def run_wp_p2p_mj(
     x_histories = [ptu.to_numpy(outputs[i]['X'].squeeze()) for i in range(num_runs)]
     u_histories = [ptu.to_numpy(outputs[i]['U'].squeeze()) for i in range(num_runs)]
     r_histories = [np.vstack([ref(1)]*(nstep+1))]*num_runs
+    ctrl_pred_x = np.stack(ctrl_pred_x)
 
     plot_mujoco_trajectories_wp_p2p(outputs, 'data/paper/mpc_mujoco_trajectories.svg')
 
     average_cost = np.mean([calculate_mpc_cost(x_history, u_history, r_history) for (x_history, u_history, r_history) in zip(x_histories, u_histories, r_histories)])
-
+    
     print("Average MPC Cost: {:.2f}".format(average_cost))
+
+    x_histories[0][:,2] *= -1
+    ctrl_pred_x[:,2,:] *= -1
+    animator = Animator(x_histories[0], true_times, x_histories[0], max_frames=500, save_path='data', state_prediction=ctrl_pred_x, drawCylinder=True)
+    animator.animate()
+
     print('fin')
+
+def animate_nav(    
+    data,
+    ):
+
+    times = np.arange(0,5,5000)
+
+    animator = Animator(state, times, state, max_frames=500, save_path='data', state_prediction=ctrl_pred_x, drawCylinder=True)
+    animator.animate()
+
 
 if __name__ == "__main__":
 
@@ -503,14 +515,17 @@ if __name__ == "__main__":
 
     Ts = 0.001
     Tf_hzn = 2.0
-    N = 2000
+    N = 30
     Ti = 0.0
     Tf = 5.0
     obstacle_opts = {'r': 0.5, 'x': 1, 'y': 1} # None
 
-    run_wp_p2p_mj(Ti,Tf,Ts,N,Tf_hzn,obstacle_opts)
-    # run_wp_traj_mj(Ti,20,Ts,500,0.5)
-    run_wp_p2p_mj_many(Ti,Tf,Ts,N,Tf_hzn,obstacle_opts)
+    data = np.load('data/paper/nmpc_nav.npz')
+    # animate_nav(data['x_history2'])
+
+    # run_wp_p2p_mj(Ti,Tf,Ts,N,Tf_hzn,obstacle_opts)
+    run_wp_traj_mj(Ti,20,Ts,N,0.5)
+    # run_wp_p2p_mj_many(Ti,Tf,Ts,N,Tf_hzn,obstacle_opts)
 
     quad_params = get_quad_params()
     integrator = "euler"
