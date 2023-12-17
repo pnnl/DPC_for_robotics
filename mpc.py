@@ -524,8 +524,8 @@ if __name__ == "__main__":
     # animate_nav(data['x_history2'])
 
     # run_wp_p2p_mj(Ti,Tf,Ts,N,Tf_hzn,obstacle_opts)
-    run_wp_traj_mj(Ti,20,Ts,N,0.5)
-    # run_wp_p2p_mj_many(Ti,Tf,Ts,N,Tf_hzn,obstacle_opts)
+    # run_wp_traj_mj(Ti,20,Ts,N,0.5)
+    run_wp_p2p_mj_many(Ti,Tf,Ts,N,Tf_hzn,obstacle_opts)
 
     quad_params = get_quad_params()
     integrator = "euler"

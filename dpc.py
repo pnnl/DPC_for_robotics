@@ -1243,6 +1243,171 @@ def run_wp_p2p_hl(
     # animator = Animator(x_history, times, r_history, max_frames=500, save_path=media_save_path, state_prediction=None, drawCylinder=True)
     # animator.animate()
 
+@time_function
+def train_lyap_nav(    # recommendations:
+    iterations,      # 2
+    epochs,          # 15
+    batch_size,      # 5000
+    minibatch_size,  # 10
+    nstep,           # 100
+    lr,              # 0.05
+    Ts,              # 0.1
+    policy_save_path = 'data/',
+    media_save_path = 'data/training/',
+    save = False,
+    ):
+
+    # unchanging parameters:
+    radius = 0.5
+    Q_con = 1_000_000
+    R = 0.1
+    Qpos = 5.00
+    Qvel = 5.00
+    barrier_type = 'softexp'
+    barrier_alpha = 0.05
+    lr_multiplier = 0.5
+
+    current_datetime = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    images_path = media_save_path + current_datetime + '/'
+
+    # Check if directory exists, and if not, create it
+    if not os.path.exists(images_path):
+        os.makedirs(images_path)
+
+    # NeuroMANCER System Definition
+    # -----------------------------
+    nx = 6 # state size
+    nu = 3 # input size
+    nc = 2 # cylinder distance and velocity
+
+    # Variables:
+    r = nm.constraint.variable('R')           # the reference
+    u = nm.constraint.variable('U')           # the input
+    x = nm.constraint.variable('X')           # the state
+    cyl = nm.constraint.variable('Cyl')       # the cylinder center coordinates
+
+    node_list = []
+
+    process_policy_input = lambda x, r, c: torch.hstack([r - x, *posVel2cyl(x, c, radius=radius)])
+    process_policy_input_node = nm.system.Node(process_policy_input, ['X', 'R', 'Cyl'], ['Obs'], name='preprocess')
+    node_list.append(process_policy_input_node)
+
+    policy = nm.modules.blocks.MLP(
+        insize=nx + nc, outsize=nu, bias=True,
+        linear_map=torch.nn.Linear,
+        nonlin=torch.nn.ReLU,
+        hsizes=[20, 20, 20, 20]
+    ).to(ptu.device)
+    policy_node = nm.system.Node(policy, ['Obs'], ['U'], name='policy')
+    node_list.append(policy_node)
+
+    dynamics = Dynamics(insize=9, outsize=6)
+    integrator = integrators.Euler(dynamics, h=torch.tensor(Ts))
+    dynamics_node = nm.system.Node(integrator, ['X', 'U'], ['X'], name='dynamics')
+    node_list.append(dynamics_node)
+
+    print(f'node list used in cl_system: {node_list}')
+    cl_system = nm.system.System(node_list)
+
+    # Dataset Generation Class
+    # ------------------------
+    dataset = DatasetGenerator(
+        task = 'wp_p2p',
+        batch_size = batch_size,
+        minibatch_size = minibatch_size,
+        nstep = nstep,
+        Ts = Ts,
+    )
+
+    # Problem Setup:
+    # --------------
+    constraints = []
+    cylinder_constraint = Q_con * ((radius**2 <= (x[:,:,0]-cyl[:,:,0])**2 + (x[:,:,2]-cyl[:,:,1])**2)) ^ 2
+    constraints.append(cylinder_constraint)
+
+    # Define Loss:
+    objectives = []
+
+    action_loss = R * (u == ptu.tensor(0.))^2  # control penalty
+    action_loss.name = 'action_loss'
+    objectives.append(action_loss)
+
+    pos_loss = Qpos * (x[:,:,::2] == r[:,:,::2])^2
+    pos_loss.name = 'pos_loss'
+    objectives.append(pos_loss)
+
+    vel_loss = Qvel * (x[:,:,1::2] == r[:,:,1::2])^2
+    vel_loss.name = 'vel_loss'
+    objectives.append(vel_loss)
+
+    # objectives = [action_loss, pos_loss, vel_loss]
+    loss = nm.loss.BarrierLoss(objectives, constraints, barrier=barrier_type, alpha=barrier_alpha)
+
+    # Define the Problem and the Trainer:
+    problem = nm.problem.Problem([cl_system], loss, grad_inference=True)
+    optimizer = torch.optim.Adagrad(policy.parameters(), lr=lr)
+
+    # Custom Callack Setup
+    # --------------------
+    callback = utils.callback.Lyap_WP_Callback(save_dir=current_datetime, media_path=media_save_path, nstep=nstep, nx=nx)
+
+    # Perform the Training
+    # --------------------
+    for i in range(iterations):
+        print(f'training with prediction horizon: {nstep}, lr: {lr}')
+
+        # Get First Datasets
+        # ------------------
+        dataset.nstep = nstep
+        train_loader, dev_loader = dataset.get_loaders()
+
+        trainer = nm.trainer.Trainer(
+            problem,
+            train_loader,
+            dev_loader,
+            dev_loader,
+            optimizer,
+            callback=callback,
+            epochs=epochs,
+            patience=epochs,
+            train_metric="train_loss",
+            dev_metric="dev_loss",
+            test_metric="test_loss",
+            eval_metric='dev_loss',
+            warmup=400,
+            lr_scheduler=False,
+            device=ptu.device
+        )
+
+        # Train Over Nsteps
+        # -----------------
+        cl_system.nsteps = nstep
+        best_model = trainer.train()
+        trainer.model.load_state_dict(best_model)
+
+        # Update Parameters for the Next Iteration
+        # ----------------------------------------
+        lr *= lr_multiplier # 0.2
+
+        # update the prediction horizon
+        cl_system.nsteps = nstep
+        optimizer.param_groups[0]['lr'] = lr
+
+    # animate the training to demonstrate its efficacy
+    callback.animate()
+    callback.delete_all_but_last_image()
+    cbf_data = callback.gather_cbf_data()
+
+    # Save the Policy
+    # ---------------
+    policy_state_dict = {}
+    for key, value in best_model.items():
+        if "callable." in key:
+            new_key = key.split("nodes.0.nodes.1.")[-1]
+            policy_state_dict[new_key] = value
+    if save is True:
+        torch.save(policy_state_dict, policy_save_path + f"wp_p2p_policy.pth")
+
 if __name__ == "__main__":
 
     # best setup below for T1 desktop
@@ -1253,6 +1418,8 @@ if __name__ == "__main__":
     torch.manual_seed(0)
     np.random.seed(0)
     ptu.init_gpu(use_gpu=False)
+
+    train_lyap_nav(iterations=2, epochs=10, batch_size=5000, minibatch_size=10, nstep=100, lr=0.05, Ts=0.1, save=False)
 
     # run_wp_p2p_hl(0, 5, 0.001)
     run_wp_p2p_mj(0, 5.0, 0.001)

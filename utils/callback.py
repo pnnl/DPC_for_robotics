@@ -566,3 +566,118 @@ class Attitude_Callback(Callback):
         # Delete all but the last one
         for file in sorted_files[:-1]:  # Exclude the last file
             os.remove(os.path.join(self.directory, file))
+
+
+class Lyap_WP_Callback(Callback):
+    def __init__(self, save_dir, media_path, nstep, nx):
+        super().__init__()
+        self.directory = media_path + save_dir + '/'
+        self.nstep = nstep
+        self.nx = nx
+        self.log = {'x': [], 'loss': []}
+
+    def begin_eval(self, trainer, output):
+
+        # lets call the current trained model on the data we are interested in
+        x_lower = -1  # Replace with your actual lower bound
+        x_upper = 1   # Replace with your actual upper bound
+        n = 9  # Replace with your actual number of points
+
+        # Generate n linearly spaced x values between x_lower and x_upper
+        x_values = torch.linspace(x_lower, x_upper, n)
+        # Calculate corresponding y values using the line equation y = -x
+        y_values = -x_values
+        z_values = torch.zeros(n)
+        xdot_values = torch.zeros(n)
+        ydot_values = torch.zeros(n)
+        zdot_values = torch.zeros(n)
+        points = torch.stack((x_values, xdot_values, y_values, ydot_values, z_values, zdot_values), dim=-1)
+        X = points.unsqueeze(1)  # Example to make it (1, 1, n, 2)
+        
+        R = torch.cat([torch.cat([torch.tensor([[[2, 0, 2, 0, 1, 0]]])]*(self.nstep+1), dim=1)]*n, dim=0)
+        Cyl = torch.cat([torch.cat([torch.tensor([[[1,1]]])]*(self.nstep+1), dim=1)]*n, dim=0)
+        Idx = torch.cat([torch.vstack([torch.tensor([0.0])]).unsqueeze(1)]*n, dim=0)
+        M = torch.cat([torch.ones([1, 1, 1])]*n, dim=0)
+
+        data = {
+            'X': X,
+            'R': R,
+            'Cyl': Cyl,
+            'Idx': Idx,
+            'M': M
+        }
+
+        data = {key: value.to(ptu.device) for key, value in data.items()}
+
+        test_trajectory = trainer.model.nodes[0](data)
+
+        # plot_wp_p2p(trajectories, save_path=self.directory)]        
+        plot_wp_p2p_train(output, test_trajectory, save_path=self.directory)
+        plt.close()
+    
+    def animate(self):
+        # Gather all the PNG files
+        filenames = sorted([f for f in os.listdir(self.directory) if f.endswith('.png')])
+
+        # Convert the PNGs to GIF
+        with imageio.get_writer(self.directory + 'animation.gif', mode='I') as writer:
+            for filename in filenames:
+                image = imageio.imread(self.directory + filename)
+                writer.append_data(image)
+
+    def delete_all_but_last_image(self):
+        # List all .png files in the directory
+        all_files = [f for f in os.listdir(self.directory) if os.path.isfile(os.path.join(self.directory, f)) and f.endswith('.png')]
+
+        # Sort the files (they'll be sorted by date/time due to the filename format)
+        sorted_files = sorted(all_files)
+
+        # Delete all but the last one
+        for file in sorted_files[:-1]:  # Exclude the last file
+            os.remove(os.path.join(self.directory, file))
+
+    def end_batch(self, trainer, output):
+        """
+        This method is called after every minibatch, this is where we will do our 
+        CBF estiamtions
+        """
+        self.log['x'].append(output['train_X'].detach())
+        self.log['loss'].append(output['train_loss'].detach())
+
+    def gather_cbf_data(self):
+        
+        x = torch.stack(self.log['x'])
+        loss = torch.stack(self.log['loss'])
+        c = torch.vstack([ptu.tensor([1.,1.])] * x.shape[2])
+
+        log = {'success': [], 'failure': [], 'minibatch_loss': [], 'minibatch_number': []}
+        for i, minibatch in enumerate(x):
+            for j, trajectory in enumerate(minibatch):
+                # state = {x, xdot, y, ydot, z, zdot}
+                xy = trajectory[:,0:4:2]
+
+                # we must first rule out all trajectories that under DPC control intersected
+                # the cylinder constraint
+                distances = torch.norm(xy - c, dim=1)
+                if (distances < 1.0).any() == True:
+                    # trajectory is tossed
+                    continue
+
+                # next we must check the lie derivatives of all points on the trajectory
+                # we know from euler integrator we can just find dynamics dot from subtracting points
+                # if this wasnt the case we could record the actual dynamics as the DPC trains
+                # Del V.T @ f(x,u) < 0
+                f = trajectory[1:,:] - trajectory[:-1,:]
+                del_V = trajectory[:-1,:]
+                L = torch.einsum('ij,ij->i', del_V, f) # einsum is AMAZING
+
+                # add the successes and failures to a history to be returned
+                true_indices = torch.nonzero(L <= 0.0, as_tuple=True)[0]
+                false_indices = torch.nonzero(L > 0.0, as_tuple=True)[0]
+
+                log['success'].append(trajectory[true_indices])
+                log['failure'].append(trajectory[false_indices])
+                log['minibatch_loss'].append(loss[i])
+                log['minibatch_number'].append(i)
+
+        return log
