@@ -7,6 +7,7 @@ import torch
 import numpy as np
 import os
 import imageio
+from scipy.spatial import ConvexHull, Delaunay
 
 def draw_cylinder(ax, x_center=0, y_center=0, z_center=0, radius=1, depth=1, resolution=100):
     z = np.linspace(z_center - depth, z_center + depth, resolution)
@@ -638,14 +639,19 @@ class Lyap_WP_Callback(Callback):
 
     def end_batch(self, trainer, output):
         """
-        This method is called after every minibatch, this is where we will do our 
-        CBF estiamtions
+        This method is called after every minibatch, this is where we will record our dataset
+        points
         """
         self.log['x'].append(output['train_X'].detach())
         self.log['loss'].append(output['train_loss'].detach())
 
-    def gather_cbf_data(self):
+    def generate_cbf(self):
         
+        # 0.18 too little
+        # 0.20 too much, or maybe not im unsure
+        cylinder_margin = 0.19
+
+        print('analysing training dataset for points that satisfy constraints and CLF...')
         x = torch.stack(self.log['x'])
         loss = torch.stack(self.log['loss'])
         c = torch.vstack([ptu.tensor([1.,1.])] * x.shape[2])
@@ -659,7 +665,7 @@ class Lyap_WP_Callback(Callback):
                 # we must first rule out all trajectories that under DPC control intersected
                 # the cylinder constraint
                 distances = torch.norm(xy - c, dim=1)
-                if (distances < 1.0).any() == True:
+                if (distances < 1.0 + cylinder_margin).any() == True:
                     # trajectory is tossed
                     continue
 
@@ -680,4 +686,23 @@ class Lyap_WP_Callback(Callback):
                 log['minibatch_loss'].append(loss[i])
                 log['minibatch_number'].append(i)
 
-        return log
+        successes = torch.vstack(log['success']).numpy()
+        # failures = torch.vstack(log['failure']).numpy()
+
+        print('forming the convex hull of successful points during training...')
+        hull = ConvexHull(successes)
+
+        print('performing delaunay triangulation of the convex hull...')
+        delaunay = Delaunay(successes[hull.vertices])
+
+        # the adversarial condition, no point in dataset managed to avoid cylinder from this state
+        point_to_check = np.array([0,1.5,0,1.5,0,0]) 
+
+        cbf = lambda x: delaunay.find_simplex(x)
+
+        print('running the first point check...')
+        is_inside = cbf(point_to_check) >= 0
+
+        print(is_inside)
+
+        return cbf

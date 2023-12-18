@@ -1396,7 +1396,7 @@ def train_lyap_nav(    # recommendations:
     # animate the training to demonstrate its efficacy
     callback.animate()
     callback.delete_all_but_last_image()
-    cbf_data = callback.gather_cbf_data()
+    cbf = callback.generate_cbf()
 
     # Save the Policy
     # ---------------
@@ -1419,7 +1419,7 @@ if __name__ == "__main__":
     np.random.seed(0)
     ptu.init_gpu(use_gpu=False)
 
-    train_lyap_nav(iterations=2, epochs=10, batch_size=5000, minibatch_size=10, nstep=100, lr=0.05, Ts=0.1, save=False)
+    train_lyap_nav(iterations=2, epochs=10, batch_size=5, minibatch_size=10, nstep=100, lr=0.05, Ts=0.1, save=False)
 
     # run_wp_p2p_hl(0, 5, 0.001)
     run_wp_p2p_mj(0, 5.0, 0.001)
