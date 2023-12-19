@@ -1,6 +1,9 @@
 # Large data files
 large_data/
 
+# vscode debugging
+.vscode/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
