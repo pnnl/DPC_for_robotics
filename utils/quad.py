@@ -105,7 +105,7 @@ def plot_mujoco_trajectories_wp_p2p(outputs, filename='data/paper/mujoco_traject
         # Plot trajectories
         x = ptu.to_numpy(output['X'][0,1:,0])
         y = ptu.to_numpy(output['X'][0,1:,1])
-        z = ptu.to_numpy(output['X'][0,1:,2])
+        z = ptu.to_numpy(output['X'][0,1:,2]) * -1
         ax1.plot(x, y, z, label='Trajectory')
         ax2.plot(x, y, label='Top-down view')
 

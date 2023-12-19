@@ -7,7 +7,6 @@ import torch
 import numpy as np
 import os
 import imageio
-from scipy.spatial import ConvexHull, Delaunay
 
 def draw_cylinder(ax, x_center=0, y_center=0, z_center=0, radius=1, depth=1, resolution=100):
     z = np.linspace(z_center - depth, z_center + depth, resolution)
@@ -575,7 +574,7 @@ class Lyap_WP_Callback(Callback):
         self.directory = media_path + save_dir + '/'
         self.nstep = nstep
         self.nx = nx
-        self.log = {'x': [], 'loss': []}
+        self.log = {'x': [], 'u': [], 'loss': []}
 
     def begin_eval(self, trainer, output):
 
@@ -643,66 +642,12 @@ class Lyap_WP_Callback(Callback):
         points
         """
         self.log['x'].append(output['train_X'].detach())
+        self.log['u'].append(output['train_U'].detach())
         self.log['loss'].append(output['train_loss'].detach())
 
-    def generate_cbf(self):
-        
-        # 0.18 too little
-        # 0.20 too much, or maybe not im unsure
-        cylinder_margin = 0.19
+    def save_data(self):
 
-        print('analysing training dataset for points that satisfy constraints and CLF...')
-        x = torch.stack(self.log['x'])
-        loss = torch.stack(self.log['loss'])
-        c = torch.vstack([ptu.tensor([1.,1.])] * x.shape[2])
+        print('saving training dataset rollouts to large_data/...')
+        torch.save(self.log, 'large_data/nav_training_data.pt')
 
-        log = {'success': [], 'failure': [], 'minibatch_loss': [], 'minibatch_number': []}
-        for i, minibatch in enumerate(x):
-            for j, trajectory in enumerate(minibatch):
-                # state = {x, xdot, y, ydot, z, zdot}
-                xy = trajectory[:,0:4:2]
-
-                # we must first rule out all trajectories that under DPC control intersected
-                # the cylinder constraint
-                distances = torch.norm(xy - c, dim=1)
-                if (distances < 1.0 + cylinder_margin).any() == True:
-                    # trajectory is tossed
-                    continue
-
-                # next we must check the lie derivatives of all points on the trajectory
-                # we know from euler integrator we can just find dynamics dot from subtracting points
-                # if this wasnt the case we could record the actual dynamics as the DPC trains
-                # Del V.T @ f(x,u) < 0
-                f = trajectory[1:,:] - trajectory[:-1,:]
-                del_V = trajectory[:-1,:]
-                L = torch.einsum('ij,ij->i', del_V, f) # einsum is AMAZING
-
-                # add the successes and failures to a history to be returned
-                true_indices = torch.nonzero(L <= 0.0, as_tuple=True)[0]
-                false_indices = torch.nonzero(L > 0.0, as_tuple=True)[0]
-
-                log['success'].append(trajectory[true_indices])
-                log['failure'].append(trajectory[false_indices])
-                log['minibatch_loss'].append(loss[i])
-                log['minibatch_number'].append(i)
-
-        successes = torch.vstack(log['success']).numpy()
-        # failures = torch.vstack(log['failure']).numpy()
-
-        print('forming the convex hull of successful points during training...')
-        hull = ConvexHull(successes)
-
-        print('performing delaunay triangulation of the convex hull...')
-        delaunay = Delaunay(successes[hull.vertices])
-
-        # the adversarial condition, no point in dataset managed to avoid cylinder from this state
-        point_to_check = np.array([0,1.5,0,1.5,0,0]) 
-
-        cbf = lambda x: delaunay.find_simplex(x)
-
-        print('running the first point check...')
-        is_inside = cbf(point_to_check) >= 0
-
-        print(is_inside)
-
-        return cbf
+        return self.log

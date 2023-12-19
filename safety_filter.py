@@ -408,6 +408,75 @@ def run_wp_p2p(
 
     print('fin')
 
+def run_nav_no_event_trigger(
+        Ti, Tf, Ts,
+        N_sf, N_pred, Tf_hzn_sf, Tf_hzn_pred,
+        integrator = 'euler',
+        policy_save_path = 'data/',
+        media_save_path = 'data/training/',
+    ):
+
+    times = np.arange(Ti, Tf, Ts)
+    nsteps = len(times)
+    quad_params = get_quad_params()
+    ctrl_params = get_ctrl_params()
+    mlp_state_dict = torch.load(policy_save_path + 'nav_policy.pth')
+
+    safety_filter = SafetyFilter(state_dot.casadi_vectorized, Ts, Tf_hzn_sf, N_sf, quad_params, euler)
+    R = reference.waypoint('wp_p2p', average_vel=1.0)
+
+    node_list = get_nominal_control_system_nodes(quad_params, ctrl_params, Ts)
+
+    filter = lambda x_seq, u_seq, violation: safety_filter(x_seq, u_seq, violation).unsqueeze(0)
+    filter_node = nm.system.Node(filter, input_keys=['X', 'U', 'Violation'], output_keys=['U_filtered'], name='dynamics')
+    node_list.append(filter_node)
+
+    sys = mujoco_quad(state=quad_params["default_init_state_np"], quad_params=quad_params, Ti=Ti, Tf=Tf, Ts=Ts, integrator=integrator)
+    sys_node = nm.system.Node(sys, input_keys=['X', 'U_filtered'], output_keys=['X'], name='dynamics')
+    node_list.append(sys_node)
+
+    cl_system = nm.system.System(node_list, nsteps=nsteps)
+
+    # load the pretrained policies
+    cl_system.nodes[1].load_state_dict(mlp_state_dict)
+
+    X = ptu.from_numpy(quad_params["default_init_state_np"][None,:][None,:].astype(np.float32))
+    # X[:,:,7] = 1.5 # xdot adversarial
+    # X[:,:,8] = 1.5 # ydot adversarial
+
+    # X[:,:,0] = 0.45
+    # X[:,:,1] = 0.45
+    data = {
+        'X': X,
+        'R': torch.concatenate([ptu.from_numpy(R(1)[None,:][None,:].astype(np.float32))]*nsteps, axis=1),
+        'Cyl': torch.concatenate([ptu.tensor([[[1,1]]])]*nsteps, axis=1),
+        'Violation': ptu.tensor([[[False]]*nsteps])
+    }
+
+    # set the mujoco simulation to the correct initial conditions
+    cl_system.nodes[5].callable.set_state(ptu.to_numpy(data['X'].squeeze().squeeze()))
+
+    # Perform CLP Simulation
+    output = cl_system.forward(data, retain_grad=False, print_loop=True)
+
+    # save
+    print("saving the state and input histories...")
+    x_history = np.stack(ptu.to_numpy(output['X'].squeeze()))
+    u_history = np.stack(ptu.to_numpy(output['U'].squeeze()))
+    r_history = np.stack(ptu.to_numpy(output['R'].squeeze()))
+
+    np.savez(
+        file = f"data/xu_sf_p2p_mj_{str(Ts)}.npz",
+        x_history = x_history,
+        u_history = u_history,
+        r_history = r_history
+    )
+
+    animator = Animator(x_history, times, r_history, max_frames=500, save_path=media_save_path, state_prediction=None, drawCylinder=True)
+    animator.animate()
+
+    print('fin')
+
 if __name__ == "__main__":
 
     # example usage
@@ -418,11 +487,14 @@ if __name__ == "__main__":
     ptu.init_gpu(use_gpu=False)
 
     Ti, Tf, Ts = 0.0, 3.5, 0.001
-    N_sf = 500
+    N_sf = 2
     N_pred = 100
     Tf_hzn_sf, Tf_hzn_pred = 0.5, 0.1
     integrator = euler
 
+
+
+    run_nav_no_event_trigger(Ti, Tf, Ts, N_sf, N_pred, Tf_hzn_sf, Tf_hzn_pred, integrator)
     run_wp_p2p(Ti, Tf, Ts, N_sf, N_pred, Tf_hzn_sf, Tf_hzn_pred, integrator)
 
 

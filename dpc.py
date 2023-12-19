@@ -945,7 +945,7 @@ def run_wp_p2p_mj(
     }
 
     # load the pretrained policy
-    mlp_state_dict = torch.load(policy_save_path + 'wp_p2p_policy.pth')
+    mlp_state_dict = torch.load(policy_save_path + 'nav_policy.pth')
     cl_system.nodes[1].load_state_dict(mlp_state_dict)
 
     # set the mujoco simulation to the correct initial conditions
@@ -983,7 +983,7 @@ def run_wp_p2p_mj(
             })
 
     # load the pretrained policy
-    mlp_state_dict = torch.load(policy_save_path + 'wp_p2p_policy.pth')
+    mlp_state_dict = torch.load(policy_save_path + 'nav_policy.pth')
     cl_system.nodes[1].load_state_dict(mlp_state_dict)
 
     # Perform CLP Simulation
@@ -1322,7 +1322,17 @@ def train_lyap_nav(    # recommendations:
     # Problem Setup:
     # --------------
     constraints = []
+
+    state_constraint = Q_con * ((x[:,:,1]) ** 2 + x[:,:,3] ** 2 + x[:,:,5] ** 2 <= 6) ^ 2
+    state_constraint.name = 'state_constraints'
+    constraints.append(state_constraint)
+
+    input_constraint = Q_con * ((u[:,:,0]) ** 2 + u[:,:,1] ** 2 + u[:,:,2] ** 2 <= 6) ^ 2
+    input_constraint.name = 'input_constraints'
+    constraints.append(input_constraint)
+
     cylinder_constraint = Q_con * ((radius**2 <= (x[:,:,0]-cyl[:,:,0])**2 + (x[:,:,2]-cyl[:,:,1])**2)) ^ 2
+    cylinder_constraint.name = 'cylinder_constraints'
     constraints.append(cylinder_constraint)
 
     # Define Loss:
@@ -1396,7 +1406,7 @@ def train_lyap_nav(    # recommendations:
     # animate the training to demonstrate its efficacy
     callback.animate()
     callback.delete_all_but_last_image()
-    cbf = callback.generate_cbf()
+    log = callback.save_data()
 
     # Save the Policy
     # ---------------
@@ -1406,7 +1416,9 @@ def train_lyap_nav(    # recommendations:
             new_key = key.split("nodes.0.nodes.1.")[-1]
             policy_state_dict[new_key] = value
     if save is True:
-        torch.save(policy_state_dict, policy_save_path + f"wp_p2p_policy.pth")
+        torch.save(policy_state_dict, policy_save_path + f"nav_policy.pth")
+
+    print('fin')
 
 if __name__ == "__main__":
 
@@ -1419,7 +1431,7 @@ if __name__ == "__main__":
     np.random.seed(0)
     ptu.init_gpu(use_gpu=False)
 
-    train_lyap_nav(iterations=2, epochs=10, batch_size=5, minibatch_size=10, nstep=100, lr=0.05, Ts=0.1, save=False)
+    train_lyap_nav(iterations=2, epochs=10, batch_size=5000, minibatch_size=10, nstep=100, lr=0.05, Ts=0.1, save=True)
 
     # run_wp_p2p_hl(0, 5, 0.001)
     run_wp_p2p_mj(0, 5.0, 0.001)
