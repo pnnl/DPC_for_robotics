@@ -722,7 +722,9 @@ def train_wp_traj(    # recommendations:
             new_key = key.split("nodes.0.nodes.1.")[-1]
             policy_state_dict[new_key] = value
     if save is True:
-        torch.save(policy_state_dict, policy_save_path + f"wp_traj_policy.pth")
+        torch.save(policy_state_dict, policy_save_path + f"traj_policy.pth")
+
+    print('fin')
 
 @time_function
 def train_fig8(    # recommendations:
@@ -1090,11 +1092,11 @@ def run_wp_traj_mj(
         )
 
     print("Average Time: {:.2f} seconds".format(total_time))
-    x_histories = [ptu.to_numpy(output['X'].squeeze())]
+    x_histories = [ptu.to_numpy(output['X'].squeeze()[1:,:])]
     u_histories = [ptu.to_numpy(output['U'].squeeze())]
     r_histories = [ptu.to_numpy(output['R'].squeeze())]
 
-    plot_mujoco_trajectories_wp_traj(output, 'data/paper/dpc_traj.svg')
+    plot_mujoco_trajectories_wp_traj([output], 'data/paper/dpc_traj.svg')
 
     average_cost = np.mean([calculate_mpc_cost(x_history, u_history, r_history) for (x_history, u_history, r_history) in zip(x_histories, u_histories, r_histories)])
 
@@ -1450,12 +1452,12 @@ if __name__ == "__main__":
 
     # run_wp_p2p_hl(0, 5, 0.001)
     # run_wp_p2p_mj(0, 5.0, 0.001)
-    run_wp_traj_mj(0, 20.0, 0.001)
-    run_fig8_mj(0.0, 10.0, 0.001)
+    # run_wp_traj_mj(0, 20.0, 0.001)
+    # run_fig8_mj(0.0, 10.0, 0.001)
 
-    train_wp_p2p(iterations=2, epochs=10, batch_size=5000, minibatch_size=10, nstep=100, lr=0.05, Ts=0.1, save=False)
-    train_fig8(iterations=1, epochs=5, batch_size=5000, minibatch_size=10, nstep=100, lr=0.05, Ts=0.1, save=False)
-    train_wp_traj(iterations=1, epochs=10, batch_size=5000, minibatch_size=10, nstep=100, lr=0.05, Ts=0.1, save=False)
+    # train_wp_p2p(iterations=2, epochs=10, batch_size=5000, minibatch_size=10, nstep=100, lr=0.05, Ts=0.1, save=False)
+    # train_fig8(iterations=1, epochs=5, batch_size=5000, minibatch_size=10, nstep=100, lr=0.05, Ts=0.1, save=False)
+    train_wp_traj(iterations=1, epochs=10, batch_size=5000, minibatch_size=10, nstep=100, lr=0.05, Ts=0.1, save=True)
 
 
 

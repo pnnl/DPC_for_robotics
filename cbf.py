@@ -82,8 +82,12 @@ def generate_cbf(history):
     cyl_hull = ConvexHull(pv_pos_lim)
     cyl_delaunay = Delaunay(pv_pos_lim[cyl_hull.vertices])
 
-    # _ = delaunay_plot_2d(delaunay)
+    # _ = delaunay_plot_2d(cyl_delaunay)
     # plt.savefig('data/paper/cylinder_constraint_cvx_hull.svg')
+    points = pv_pos_lim[cyl_hull.vertices]
+    simplices = cyl_delaunay.simplices
+
+    plot_shifted_f1b_cbf(points, simplices, delta=1.0)
 
     def cyl_cbf(x):
         pv = np.hstack(posVel2cyl(x[None,:], c[:1,:], cylinder_radius)).flatten()
@@ -96,19 +100,25 @@ def generate_cbf(history):
     # Construct Box Constraint Convex Hull
     # ------------------------------------
     print('forming the convex hull of successful points during training... (this can take time)')
-    hull = ConvexHull(successes)
+    # hull = ConvexHull(successes)
 
     print('performing delaunay triangulation of the convex hull... (this can take time)')
-    delaunay = Delaunay(successes[hull.vertices])
+    # delaunay = Delaunay(successes[hull.vertices])
 
 
-    box_cbf = lambda x: delaunay.find_simplex(x)
+    # box_cbf = lambda x: delaunay.find_simplex(x)
 
-    box_cbf(point_to_check)
+    # box_cbf(point_to_check)
 
     # interesection of the two safe sets form the CBF
+    # def cbf(x):
+    #     if box_cbf(x) >= 0 and cyl_cbf(x) >= 0:
+    #         return True
+    #     else:
+    #         return False
+
     def cbf(x):
-        if box_cbf(x) >= 0 and cyl_cbf(x) >= 0:
+        if cyl_cbf(x) >= 0:
             return True
         else:
             return False
@@ -120,6 +130,48 @@ def generate_cbf(history):
 
     print('fin')
 
+def plot_shifted_f1b_cbf(points, simplices, delta, filename='data/paper/cylinder_constraint_convex_hull.svg'):
+    
+    shifted_points = np.copy(points)
+    shifted_points[:, 0] += delta
+
+    fig, axs = plt.subplots(1, 2, figsize=(12, 6))
+
+    # Left subplot - Original plot
+    axs[0].triplot(points[:, 0], points[:, 1], simplices)
+    axs[0].plot(points[:, 0], points[:, 1], 'o')
+    axs[0].set_xlabel('$a_1$')
+    axs[0].set_ylabel('$a_2$')
+    axs[0].set_xlim(-0.2, 5)
+
+    # Right subplot - Shifted plot only
+    axs[1].triplot(shifted_points[:, 0], shifted_points[:, 1], simplices)
+    axs[1].plot(shifted_points[:, 0], shifted_points[:, 1], 'o')
+    axs[1].set_xlabel('$a_1$')
+    axs[1].set_ylabel('$a_2$')
+    axs[1].set_xlim(-0.2, 5)
+
+
+    # Adding a line on the left-most section of the original plot
+    left_most_x = np.min(points[:, 0])
+    axs[1].axvline(x=left_most_x, color='green', linestyle='--')
+
+    # Adding a line on the left-most section of the shifted plot
+    left_most_shifted_x = np.min(shifted_points[:, 0])
+    axs[1].axvline(x=left_most_shifted_x, color='green', linestyle='--')
+
+    # Adding an arrow originating from the line to the shifted points
+    arrow_start = (left_most_x, np.mean(points[:, 1]))
+    arrow_end = (left_most_x + delta, np.mean(shifted_points[:, 1]))
+    axs[1].annotate('', xy=arrow_end, xytext=arrow_start, 
+                    arrowprops=dict(facecolor='black', shrink=0.05))
+
+    # Adding delta symbol just above the arrow
+    delta_pos = ((arrow_start[0] + arrow_end[0]) / 2, (arrow_start[1] + arrow_end[1]) / 2 + 0.05)  # Adjusting position
+    axs[1].text(delta_pos[0], delta_pos[1], '$\delta$', fontsize=16, va='bottom', ha='center')
+
+    plt.tight_layout()
+    plt.savefig(filename)
 
 if __name__ == "__main__":
 
