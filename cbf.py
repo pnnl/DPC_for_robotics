@@ -79,7 +79,6 @@ def generate_cbf(history):
     # we don't want the max vel towards the cylinder to be too high for robustness
     pv_pos_lim = pv_pos # pv_pos[pv_pos[:, 1] <= 4]
 
-
     cyl_hull = ConvexHull(pv_pos_lim)
     cyl_delaunay = Delaunay(pv_pos_lim[cyl_hull.vertices])
 
@@ -101,7 +100,6 @@ def generate_cbf(history):
 
     print('performing delaunay triangulation of the convex hull... (this can take time)')
     delaunay = Delaunay(successes[hull.vertices])
-
 
 
     box_cbf = lambda x: delaunay.find_simplex(x)
