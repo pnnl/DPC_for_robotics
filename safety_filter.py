@@ -335,7 +335,6 @@ class Predictor:
         violations = self.check_violations(predictions['X'])
         return predictions['X'][0], predictions['U'][0], violations
 
-
 def run_wp_p2p(
         Ti, Tf, Ts,
         N_sf, N_pred, Tf_hzn_sf, Tf_hzn_pred,

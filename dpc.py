@@ -1,4 +1,5 @@
 import os
+import time
 from datetime import datetime
 import torch
 import numpy as np
@@ -9,10 +10,11 @@ from neuromancer.dynamics import ode, integrators
 import utils.pytorch as ptu
 import utils.callback
 import reference
-from utils.quad import Animator, plot_high_level_trajectories, plot_mujoco_trajectories_wp_p2p
+from utils.quad import Animator, plot_high_level_trajectories, plot_mujoco_trajectories_wp_p2p, calculate_mpc_cost, plot_mujoco_trajectories_wp_traj
 from utils.time import time_function
 from utils.integrate import euler, RK4
 from dynamics import state_dot
+
 
 from dynamics import mujoco_quad, get_quad_params
 from pid import PID, get_ctrl_params
@@ -951,23 +953,6 @@ def run_wp_p2p_mj(
     # set the mujoco simulation to the correct initial conditions
     cl_system.nodes[4].callable.set_state(ptu.to_numpy(data['X'].squeeze().squeeze()))
 
-    # Perform CLP Simulation
-    # output = cl_system.forward(data, retain_grad=False)
-
-    # # save
-    # print("saving the state and input histories...")
-    # x_history = np.stack(ptu.to_numpy(output['X'].squeeze()))
-    # u_history = np.stack(ptu.to_numpy(output['U'].squeeze()))
-    # r_history = np.stack(ptu.to_numpy(output['R'].squeeze()))
-
-    # if save is True:
-    #     np.savez(
-    #         file = f"data/xu_fig8_mj_{str(Ts)}.npz",
-    #         x_history = x_history,
-    #         u_history = u_history,
-    #         r_history = r_history
-    #     )
-
     npoints = 5  # Number of points you want to generate in 2 dimensions ie. 5 == (5x5 grid)
     xy_values = ptu.from_numpy(np.linspace(-1, 1, npoints))  # Generates 'npoints' values between -10 and 10 for x
     z_values = ptu.from_numpy(np.linspace(-1, 1, 1))
@@ -988,14 +973,29 @@ def run_wp_p2p_mj(
 
     # Perform CLP Simulation
     outputs = []
+
+    start_time = time.time()
     for data in tqdm(datasets):
         # set the mujoco simulation to the correct initial conditions
         cl_system.nodes[4].callable.set_state(ptu.to_numpy(data['X'].squeeze().squeeze()))
         cl_system.nodes[3].callable.reset(None)
         outputs.append(cl_system.forward(data, retain_grad=False))
 
-    plot_mujoco_trajectories_wp_p2p(outputs)
+    end_time = time.time()
+    total_time = (end_time - start_time)
+    average_time = total_time / npoints
 
+    print("Average Time: {:.2f} seconds".format(average_time))
+    x_histories = [ptu.to_numpy(outputs[i]['X'].squeeze()) for i in range(npoints)]
+    u_histories = [ptu.to_numpy(outputs[i]['U'].squeeze()) for i in range(npoints)]
+    r_histories = [np.vstack([R(1)]*(nstep+1))]*npoints
+
+    plot_mujoco_trajectories_wp_p2p(outputs, 'data/paper/dpc_nav.svg')
+
+    average_cost = np.mean([calculate_mpc_cost(x_history, u_history, r_history) for (x_history, u_history, r_history) in zip(x_histories, u_histories, r_histories)])
+
+    print("Average MPC Cost: {:.2f}".format(average_cost))
+    print('fin')
     # animator = Animator(x_history, times, r_history, max_frames=500, save_path=media_save_path, state_prediction=None, drawCylinder=True)
     # animator.animate()
 
@@ -1070,7 +1070,10 @@ def run_wp_traj_mj(
     cl_system.nodes[4].callable.set_state(ptu.to_numpy(data['X'].squeeze().squeeze()))
 
     # Perform CLP Simulation
-    output = cl_system.forward(data, retain_grad=False)
+    start_time = time.time()
+    output = cl_system.forward(data, retain_grad=False, print_loop=True)
+    end_time = time.time()
+    total_time = (end_time - start_time)
 
     # save
     print("saving the state and input histories...")
@@ -1085,6 +1088,18 @@ def run_wp_traj_mj(
             u_history = u_history,
             r_history = r_history
         )
+
+    print("Average Time: {:.2f} seconds".format(total_time))
+    x_histories = [ptu.to_numpy(output['X'].squeeze())]
+    u_histories = [ptu.to_numpy(output['U'].squeeze())]
+    r_histories = [ptu.to_numpy(output['R'].squeeze())]
+
+    plot_mujoco_trajectories_wp_traj(output, 'data/paper/dpc_traj.svg')
+
+    average_cost = np.mean([calculate_mpc_cost(x_history, u_history, r_history) for (x_history, u_history, r_history) in zip(x_histories, u_histories, r_histories)])
+
+    print("Average MPC Cost: {:.2f}".format(average_cost))
+
 
     animator = Animator(x_history, times, r_history, max_frames=500, save_path=media_save_path, state_prediction=None, drawCylinder=False)
     animator.animate()
@@ -1431,10 +1446,10 @@ if __name__ == "__main__":
     np.random.seed(0)
     ptu.init_gpu(use_gpu=False)
 
-    train_lyap_nav(iterations=2, epochs=10, batch_size=5000, minibatch_size=10, nstep=100, lr=0.05, Ts=0.1, save=True)
+    # train_lyap_nav(iterations=2, epochs=10, batch_size=5000, minibatch_size=10, nstep=100, lr=0.05, Ts=0.1, save=True)
 
     # run_wp_p2p_hl(0, 5, 0.001)
-    run_wp_p2p_mj(0, 5.0, 0.001)
+    # run_wp_p2p_mj(0, 5.0, 0.001)
     run_wp_traj_mj(0, 20.0, 0.001)
     run_fig8_mj(0.0, 10.0, 0.001)
 
