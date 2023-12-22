@@ -286,11 +286,19 @@ def run_adv_nav_mj_many(
 
     start_time = time.time()
     for xy in xy_values:
+
+        v = 1.6 # directly towards the cylinder
+        x = xy
+        y = -xy
+        xr = 2
+        yr = 2
+        vy = v * torch.sin(torch.arctan((yr-y)/(xr-x)))
+        vx = v * torch.cos(torch.arctan((yr-y)/(xr-x)))
+
         for z in z_values:
             outputs.append({'X': [state], 'U': [np.zeros(4)]})
             state = quad_params["default_init_state_np"]
-            state[0], state[1], state[2] = xy, -xy, z
-            vx, vy = 1.6, 1.6 # adversarial start
+            state[0], state[1], state[2] = x, y, z
             state[7], state[8] = vx, vy
             for t in tqdm(true_times):
 
@@ -328,6 +336,9 @@ def run_adv_nav_mj_many(
         x_history4 = ptu.to_numpy(outputs[4]['X'].squeeze()),
         u_history4 = ptu.to_numpy(outputs[4]['U'].squeeze()),
     )
+
+    for i in range(5):
+        outputs[i]['X'][:,:,2] *= -1
 
     plot_mujoco_trajectories_wp_p2p(outputs, f'data/paper/mpc_adv_nav_{str(Ts)}.svg')
 
@@ -606,7 +617,8 @@ if __name__ == "__main__":
     # run_wp_p2p_mj(Ti,Tf,Ts,N,Tf_hzn,obstacle_opts)
     # run_wp_traj_mj(Ti,20,Ts,N,0.5)
     # run_wp_p2p_mj_many(Ti,Tf,Ts,N,Tf_hzn,obstacle_opts)
-    run_wp_p2p_mj_many(Ti,Tf,0.01,N,Tf_hzn,obstacle_opts)
+    # run_wp_p2p_mj_many(Ti,Tf,0.01,N,Tf_hzn,obstacle_opts)
+    run_adv_nav_mj_many(Ti,Tf,0.01,N,Tf_hzn,obstacle_opts)
 
     quad_params = get_quad_params()
     integrator = "euler"

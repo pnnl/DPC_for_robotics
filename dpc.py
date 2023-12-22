@@ -941,30 +941,34 @@ def run_adv_nav_mj(
     # the reference about which we generate data
     R = reference.waypoint('wp_p2p', average_vel=1.0)
 
-    X = ptu.from_numpy(quad_params["default_init_state_np"][None,:][None,:].astype(np.float32))
-    data = {
-        'X': X,
-        'R': torch.concatenate([ptu.from_numpy(R(1)[None,:][None,:].astype(np.float32))]*nstep, axis=1),
-        'Cyl': torch.concatenate([ptu.tensor([[[1,1]]])]*nstep, axis=1),
-    }
+    # X = ptu.from_numpy(quad_params["default_init_state_np"][None,:][None,:].astype(np.float32))
+    # data = {
+    #     'X': X,
+    #     'R': torch.concatenate([ptu.from_numpy(R(1)[None,:][None,:].astype(np.float32))]*nstep, axis=1),
+    #     'Cyl': torch.concatenate([ptu.tensor([[[1,1]]])]*nstep, axis=1),
+    # }
 
     # load the pretrained policy
-    mlp_state_dict = torch.load(policy_save_path + 'nav_policy.pth')
-    cl_system.nodes[1].load_state_dict(mlp_state_dict)
+    # mlp_state_dict = torch.load(policy_save_path + 'nav_policy.pth')
+    # cl_system.nodes[1].load_state_dict(mlp_state_dict)
 
     # set the mujoco simulation to the correct initial conditions
-    cl_system.nodes[4].callable.set_state(ptu.to_numpy(data['X'].squeeze().squeeze()))
+    # cl_system.nodes[4].callable.set_state(ptu.to_numpy(data['X'].squeeze().squeeze()))
 
     npoints = 5  # Number of points you want to generate in 2 dimensions ie. 5 == (5x5 grid)
     xy_values = ptu.from_numpy(np.linspace(-1, 1, npoints))  # Generates 'npoints' values between -10 and 10 for x
     z_values = ptu.from_numpy(np.linspace(-1, 1, 1))
     z_values = [ptu.tensor(0.)]
 
-    # adversarial initial conditions
-    vx, vy = 1.6, 1.6
-
     datasets = []
     for xy in tqdm(xy_values):
+        v = 1.6 # directly towards the cylinder
+        xr = 2
+        yr = 2
+        x = xy
+        y = -xy
+        vy = v * torch.sin(torch.arctan((yr-y)/(xr-x)))
+        vx = v * torch.cos(torch.arctan((yr-y)/(xr-x)))
         for z in z_values:
             datasets.append({
                 'X': ptu.tensor([[[xy,-xy,z,1,0,0,0,vx,vy,0,0,0,0,*[522.9847140714692]*4]]]),
