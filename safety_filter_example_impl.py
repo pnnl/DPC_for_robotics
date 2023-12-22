@@ -171,32 +171,7 @@ if __name__ == "__main__":
     plt.ylabel('State')
     plt.show()
 
-
-
-
-    # Simulate the systems
-    CL = ClosedLoopSystem(f=fpert, u=SF, u_nom=u_nom, dt=dt, int_type=params['integrator_type'])
-    CLtest = ClosedLoopSystem(f=fpert, u=dummy_control, u_nom=u_nom, dt=dt, int_type=params['integrator_type'])
-    Cldpc = ClosedLoopSystem(f=fpert, u=SF, u_nom=u_DPC, dt=dt, int_type=params['integrator_type'])
-
-    start_time = time.time()
-    [X, U] = CL.simulate(x0=x0, N=Nsim)
-    end_time = time.time()
-    CLtime = end_time - start_time
-    CLevents = SF.events
-    SF.clear_events()
-
-    start_time = time.time()
-    [Xtest, Utest] = CLtest.simulate(x0=x0, N=Nsim)
-    end_time = time.time()
-    CLtest_time = end_time - start_time
-    SF.clear_events()
-
-    start_time = time.time()
-    [Xdpc, Udpc] = Cldpc.simulate(x0=x0,N=Nsim)
-    end_time = time.time()
-    CLdpc_time = end_time - start_time
-    CLdpc_events = SF.events
+    # simulate closed loop systems
     SF.clear_events()
 
     print('Closed-loop simulation time (CL) = ' + str(CLtime) + ' s')

@@ -892,6 +892,134 @@ def train_fig8(    # recommendations:
         torch.save(policy_state_dict, policy_save_path + f"fig8_policy.pth")
 
 @time_function
+def run_adv_nav_mj(
+        Ti, Tf, Ts,
+        integrator = 'euler',
+        policy_save_path = 'data/',
+        media_save_path = 'data/training/',
+        save = False,
+    ):
+
+    times = np.arange(Ti, Tf, Ts)
+    nstep = len(times)
+    quad_params = get_quad_params()
+    ctrl_params = get_ctrl_params()
+
+    node_list = []
+
+    def process_policy_input(x, r, c, radius=0.5):
+        idx = [0,7,1,8,2,9]
+        x_r, r_r = x[:, idx], r[:, idx]
+        x_r = torch.clip(x_r, min=ptu.tensor(-3.), max=ptu.tensor(3.))
+        r_r = torch.clip(r_r, min=ptu.tensor(-3.), max=ptu.tensor(3.))
+        c_pos, c_vel = posVel2cyl(x_r, c, radius)
+        return torch.hstack([r_r - x_r, c_pos, c_vel])
+    process_policy_input_node = nm.system.Node(process_policy_input, ['X', 'R', 'Cyl'], ['Obs'], name='state_selector')
+    node_list.append(process_policy_input_node)
+
+    mlp = nm.modules.blocks.MLP(6 + 2, 3, bias=True,
+                    linear_map=torch.nn.Linear,
+                    nonlin=torch.nn.ReLU,
+                    hsizes=[20, 20, 20, 20]).to(ptu.device)
+    policy_node = nm.system.Node(mlp, ['Obs'], ['MLP_U'], name='mlp')
+    node_list.append(policy_node)
+
+    gravity_offset = lambda u: u + ptu.tensor([[0,0,-quad_params["hover_thr"]]])
+    gravity_offset_node = nm.system.Node(gravity_offset, ['MLP_U'], ['MLP_U_grav'], name='gravity_offset')
+    node_list.append(gravity_offset_node)
+
+    pid = PID(Ts=Ts, bs=1, ctrl_params=ctrl_params, quad_params=quad_params)
+    pid_node = nm.system.Node(pid, ['X', 'MLP_U_grav'], ['U'], name='pid_control')
+    node_list.append(pid_node)
+
+    sys = mujoco_quad(state=quad_params["default_init_state_np"], quad_params=quad_params, Ti=Ti, Tf=Tf, Ts=Ts, integrator=integrator)
+    sys_node = nm.system.Node(sys, input_keys=['X', 'U'], output_keys=['X'], name='dynamics')
+    node_list.append(sys_node)
+
+    cl_system = nm.system.System(node_list, nsteps=nstep)
+
+    # the reference about which we generate data
+    R = reference.waypoint('wp_p2p', average_vel=1.0)
+
+    X = ptu.from_numpy(quad_params["default_init_state_np"][None,:][None,:].astype(np.float32))
+    data = {
+        'X': X,
+        'R': torch.concatenate([ptu.from_numpy(R(1)[None,:][None,:].astype(np.float32))]*nstep, axis=1),
+        'Cyl': torch.concatenate([ptu.tensor([[[1,1]]])]*nstep, axis=1),
+    }
+
+    # load the pretrained policy
+    mlp_state_dict = torch.load(policy_save_path + 'nav_policy.pth')
+    cl_system.nodes[1].load_state_dict(mlp_state_dict)
+
+    # set the mujoco simulation to the correct initial conditions
+    cl_system.nodes[4].callable.set_state(ptu.to_numpy(data['X'].squeeze().squeeze()))
+
+    npoints = 5  # Number of points you want to generate in 2 dimensions ie. 5 == (5x5 grid)
+    xy_values = ptu.from_numpy(np.linspace(-1, 1, npoints))  # Generates 'npoints' values between -10 and 10 for x
+    z_values = ptu.from_numpy(np.linspace(-1, 1, 1))
+    z_values = [ptu.tensor(0.)]
+
+    # adversarial initial conditions
+    vx, vy = 1.6, 1.6
+
+    datasets = []
+    for xy in tqdm(xy_values):
+        for z in z_values:
+            datasets.append({
+                'X': ptu.tensor([[[xy,-xy,z,1,0,0,0,vx,vy,0,0,0,0,*[522.9847140714692]*4]]]),
+                'R': torch.concatenate([ptu.from_numpy(R(1)[None,:][None,:].astype(np.float32))]*nstep, axis=1),
+                'Cyl': ptu.tensor([[[1,1]]*nstep]),
+            })
+
+    # load the pretrained policy
+    mlp_state_dict = torch.load(policy_save_path + 'nav_policy.pth')
+    cl_system.nodes[1].load_state_dict(mlp_state_dict)
+
+    # Perform CLP Simulation
+    outputs = []
+
+    start_time = time.time()
+    for data in tqdm(datasets):
+        # set the mujoco simulation to the correct initial conditions
+        cl_system.nodes[4].callable.set_state(ptu.to_numpy(data['X'].squeeze().squeeze()))
+        cl_system.nodes[3].callable.reset(None)
+        outputs.append(cl_system.forward(data, retain_grad=False))
+
+    end_time = time.time()
+    total_time = (end_time - start_time)
+    average_time = total_time / npoints
+
+    print("Average Time: {:.2f} seconds".format(average_time))
+    x_histories = [ptu.to_numpy(outputs[i]['X'].squeeze()) for i in range(npoints)]
+    u_histories = [ptu.to_numpy(outputs[i]['U'].squeeze()) for i in range(npoints)]
+    r_histories = [np.vstack([R(1)]*(nstep+1))]*npoints
+
+    plot_mujoco_trajectories_wp_p2p(outputs, 'data/paper/dpc_adv_nav.svg')
+
+    average_cost = np.mean([calculate_mpc_cost(x_history, u_history, r_history) for (x_history, u_history, r_history) in zip(x_histories, u_histories, r_histories)])
+
+    print("Average MPC Cost: {:.2f}".format(average_cost))
+
+    np.savez(
+        file = f"data/dpc_adv_nav_mj_{str(Ts)}.npz",
+        x_history0 = ptu.to_numpy(outputs[0]['X'].squeeze()),
+        u_history0 = ptu.to_numpy(outputs[0]['U'].squeeze()),
+        x_history1 = ptu.to_numpy(outputs[1]['X'].squeeze()),
+        u_history1 = ptu.to_numpy(outputs[1]['U'].squeeze()),
+        x_history2 = ptu.to_numpy(outputs[2]['X'].squeeze()),
+        u_history2 = ptu.to_numpy(outputs[2]['U'].squeeze()),
+        x_history3 = ptu.to_numpy(outputs[3]['X'].squeeze()),
+        u_history3 = ptu.to_numpy(outputs[3]['U'].squeeze()),
+        x_history4 = ptu.to_numpy(outputs[4]['X'].squeeze()),
+        u_history4 = ptu.to_numpy(outputs[4]['U'].squeeze()),
+    )
+
+    print('fin')
+    # animator = Animator(x_history, times, r_history, max_frames=500, save_path=media_save_path, state_prediction=None, drawCylinder=True)
+    # animator.animate()
+
+@time_function
 def run_wp_p2p_mj(
         Ti, Tf, Ts,
         integrator = 'euler',
@@ -992,7 +1120,7 @@ def run_wp_p2p_mj(
     u_histories = [ptu.to_numpy(outputs[i]['U'].squeeze()) for i in range(npoints)]
     r_histories = [np.vstack([R(1)]*(nstep+1))]*npoints
 
-    plot_mujoco_trajectories_wp_p2p(outputs, 'data/paper/dpc_nav.svg')
+    plot_mujoco_trajectories_wp_p2p(outputs, 'data/paper/dpc_adv_nav.svg')
 
     average_cost = np.mean([calculate_mpc_cost(x_history, u_history, r_history) for (x_history, u_history, r_history) in zip(x_histories, u_histories, r_histories)])
 
@@ -1449,7 +1577,7 @@ if __name__ == "__main__":
     ptu.init_gpu(use_gpu=False)
 
     # train_lyap_nav(iterations=2, epochs=10, batch_size=5000, minibatch_size=10, nstep=100, lr=0.05, Ts=0.1, save=True)
-
+    run_adv_nav_mj(0, 5.0, 0.001)
     # run_wp_p2p_hl(0, 5, 0.001)
     # run_wp_p2p_mj(0, 5.0, 0.001)
     # run_wp_traj_mj(0, 20.0, 0.001)
