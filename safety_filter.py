@@ -13,6 +13,8 @@ from dynamics import get_quad_params, mujoco_quad, state_dot
 from pid import get_ctrl_params, PID
 import reference
 from utils.quad import Animator
+from utils.quad import Animator, plot_mujoco_trajectories_wp_p2p, calculate_mpc_cost, plot_mujoco_trajectories_wp_traj
+
 
 class SafetyFilter:
 
@@ -38,8 +40,9 @@ class SafetyFilter:
 
         self.nx = 17
         self.nu = 4
-        # delta = 0.00005 # Small robustness margin for constraint tightening
-        delta = 0.0001
+        delta = 0.00005 # Small robustness margin for constraint tightening
+        # delta = 0.0001
+        # delta = 0.01
         # delta = 0.0
         # alpha = 10000.0  # Gain term required to be large as per Wabersich2022 paper
         alpha = 1000000.0
@@ -72,11 +75,11 @@ class SafetyFilter:
         # state_constraints[2] = lambda x, k: r**2 - (x[0] - x_c)**2 - (x[1] - y_c)**2 # without expanding cylinder term
 
         # Quadratic CBF
-        cbf_const = (np.sqrt(2) - 0.5) ** 2
+        # cbf_const = (np.sqrt(2) - 0.5) ** 2
         # terminal constraint set
         xr = np.copy(quad_params["default_init_state_np"])
         xr[0], xr[1], xr[2] = 2, 2, 1 # x, y, z, (z is flipped)
-        hf = lambda x: (x-xr).T @ (x-xr) - cbf_const
+        # hf = lambda x: (x-xr).T @ (x-xr) - cbf_const
 
         # Input constraints: h(u) <= 0
         kk = 0
@@ -158,9 +161,9 @@ class SafetyFilter:
                 self.opti.subject_to(state_constraints[ii](self.X[:, kk],kk) <= self.Xi[ii,kk] - rob_marg)
 
         # Terminal constraint, enforced at last time step
-        rob_marg_term = Lhf_x * Ld * Lf_x ** (self.N - 1)
-        self.opti_feas.subject_to(hf(self.X_f[:, -1]) <= self.XiN_f - rob_marg_term)
-        self.opti.subject_to(hf(self.X[:, -1]) <= self.XiN - rob_marg_term)
+        # rob_marg_term = Lhf_x * Ld * Lf_x ** (self.N - 1)
+        # self.opti_feas.subject_to(hf(self.X_f[:, -1]) <= self.XiN_f - rob_marg_term)
+        # self.opti.subject_to(hf(self.X[:, -1]) <= self.XiN - rob_marg_term)
 
         # Input constraints
         for iii in range(self.ncu):
@@ -208,7 +211,7 @@ class SafetyFilter:
             # self.Uf_warm = u_seq
             # self.Xi_warm = np.zeros((self.nc, self.N))
             # self.XiN_warm = 0.0
-            return ptu.from_numpy(u_seq[:,0])
+            return ptu.from_numpy(u_seq[:,0]), None
         
         else:
 
@@ -269,7 +272,7 @@ class SafetyFilter:
 
             print(f"u delta: {ptu.from_numpy(u_seq[:,0]) - u}")
 
-            return u
+            return u, ptu.from_numpy(self.X_warm)
 
 def get_nominal_control_system_nodes(quad_params, ctrl_params, Ts):
 
@@ -426,8 +429,11 @@ def run_nav_no_event_trigger(
 
     node_list = get_nominal_control_system_nodes(quad_params, ctrl_params, Ts)
 
-    filter = lambda x_seq, u_seq, violation: safety_filter(x_seq, u_seq, violation).unsqueeze(0)
-    filter_node = nm.system.Node(filter, input_keys=['X', 'U', 'Violation'], output_keys=['U_filtered'], name='dynamics')
+    # filter = lambda x_seq, u_seq, violation: safety_filter(x_seq, u_seq, violation).unsqueeze(0)
+    def filter(x_seq, u_seq, violation):
+        u, x_planned = safety_filter(x_seq, u_seq, violation)
+        return u.unsqueeze(0), x_planned
+    filter_node = nm.system.Node(filter, input_keys=['X', 'U', 'Violation'], output_keys=['U_filtered', 'X_planned'], name='dynamics')
     node_list.append(filter_node)
 
     sys = mujoco_quad(state=quad_params["default_init_state_np"], quad_params=quad_params, Ti=Ti, Tf=Tf, Ts=Ts, integrator=integrator)
@@ -440,8 +446,8 @@ def run_nav_no_event_trigger(
     cl_system.nodes[1].load_state_dict(mlp_state_dict)
 
     X = ptu.from_numpy(quad_params["default_init_state_np"][None,:][None,:].astype(np.float32))
-    # X[:,:,7] = 1.5 # xdot adversarial
-    # X[:,:,8] = 1.5 # ydot adversarial
+    X[:,:,7] = 1.5 # xdot adversarial
+    X[:,:,8] = 1.5 # ydot adversarial
 
     # X[:,:,0] = 0.45
     # X[:,:,1] = 0.45
@@ -471,7 +477,87 @@ def run_nav_no_event_trigger(
         r_history = r_history
     )
 
-    animator = Animator(x_history, times, r_history, max_frames=500, save_path=media_save_path, state_prediction=None, drawCylinder=True)
+    plot_mujoco_trajectories_wp_p2p([output], f'data/paper/dpcsf_adv_nav_{str(Ts)}.svg')
+
+    state_prediction = ptu.to_numpy(output['X_planned']).transpose(1, 0, 2)
+
+    animator = Animator(x_history, times, r_history, max_frames=500, save_path=media_save_path, state_prediction=state_prediction, drawCylinder=True)
+    animator.animate()
+
+    print('fin')
+
+def run_nav_mj_no_event_trigger(
+        Ti, Tf, Ts,
+        N_sf, N_pred, Tf_hzn_sf, Tf_hzn_pred,
+        integrator = 'euler',
+        policy_save_path = 'data/',
+        media_save_path = 'data/training/',
+    ):
+
+    times = np.arange(Ti, Tf, Ts)
+    nsteps = len(times)
+    quad_params = get_quad_params()
+    ctrl_params = get_ctrl_params()
+    mlp_state_dict = torch.load(policy_save_path + 'nav_policy.pth')
+
+    safety_filter = SafetyFilter(state_dot.casadi_vectorized, Ts, Tf_hzn_sf, N_sf, quad_params, euler)
+    R = reference.waypoint('wp_p2p', average_vel=1.0)
+
+    node_list = get_nominal_control_system_nodes(quad_params, ctrl_params, Ts)
+
+    # filter = lambda x_seq, u_seq, violation: safety_filter(x_seq, u_seq, violation).unsqueeze(0)
+    def filter(x_seq, u_seq, violation):
+        u, x_planned = safety_filter(x_seq, u_seq, violation)
+        return u.unsqueeze(0), x_planned
+    filter_node = nm.system.Node(filter, input_keys=['X', 'U', 'Violation'], output_keys=['U_filtered', 'X_planned'], name='dynamics')
+    node_list.append(filter_node)
+
+    sys = mujoco_quad(state=quad_params["default_init_state_np"], quad_params=quad_params, Ti=Ti, Tf=Tf, Ts=Ts, integrator=integrator)
+    sys_node = nm.system.Node(sys, input_keys=['X', 'U_filtered'], output_keys=['X'], name='dynamics')
+    node_list.append(sys_node)
+
+    cl_system = nm.system.System(node_list, nsteps=nsteps)
+
+    # load the pretrained policies
+    cl_system.nodes[1].load_state_dict(mlp_state_dict)
+
+    X = ptu.from_numpy(quad_params["default_init_state_np"][None,:][None,:].astype(np.float32))
+    X[:,:,7] = 1.5 # xdot adversarial
+    X[:,:,8] = 1.5 # ydot adversarial
+
+    # X[:,:,0] = 0.45
+    # X[:,:,1] = 0.45
+    data = {
+        'X': X,
+        'R': torch.concatenate([ptu.from_numpy(R(1)[None,:][None,:].astype(np.float32))]*nsteps, axis=1),
+        'Cyl': torch.concatenate([ptu.tensor([[[1,1]]])]*nsteps, axis=1),
+        'Violation': ptu.tensor([[[False]]*nsteps])
+    }
+
+    # set the mujoco simulation to the correct initial conditions
+    cl_system.nodes[5].callable.set_state(ptu.to_numpy(data['X'].squeeze().squeeze()))
+
+    # Perform CLP Simulation
+    output = cl_system.forward(data, retain_grad=False, print_loop=True)
+
+    # save
+    print("saving the state and input histories...")
+    x_history = np.stack(ptu.to_numpy(output['X'].squeeze()))
+    u_history = np.stack(ptu.to_numpy(output['U'].squeeze()))
+    r_history = np.stack(ptu.to_numpy(output['R'].squeeze()))
+
+    np.savez(
+        file = f"data/xu_sf_p2p_mj_{str(Ts)}.npz",
+        x_history = x_history,
+        u_history = u_history,
+        r_history = r_history
+    )
+
+    plot_mujoco_trajectories_wp_p2p([output], f'data/paper/dpcsf_adv_nav_{str(Ts)}.svg')
+
+    state_prediction = ptu.to_numpy(output['X_planned']).transpose(1, 0, 2)
+
+    animator = Animator(x_history, times, r_history, max_frames=500, save_path=media_save_path, state_prediction=state_prediction, drawCylinder=True)
     animator.animate()
 
     print('fin')
@@ -486,26 +572,24 @@ if __name__ == "__main__":
     ptu.init_gpu(use_gpu=False)
 
     Ti, Tf, Ts = 0.0, 3.5, 0.001
-    N_sf = 2
-    N_pred = 100
-    Tf_hzn_sf, Tf_hzn_pred = 0.5, 0.1
+    N_sf = 30
+    N_pred = None
+    Tf_hzn_sf, Tf_hzn_pred = 0.5, None # 0.75 works, is best that does
     integrator = euler
 
-
-
     run_nav_no_event_trigger(Ti, Tf, Ts, N_sf, N_pred, Tf_hzn_sf, Tf_hzn_pred, integrator)
-    run_wp_p2p(Ti, Tf, Ts, N_sf, N_pred, Tf_hzn_sf, Tf_hzn_pred, integrator)
+    # run_wp_p2p(Ti, Tf, Ts, N_sf, N_pred, Tf_hzn_sf, Tf_hzn_pred, integrator)
 
 
-    quad_params = get_quad_params()
+    # quad_params = get_quad_params()
 
-    safety_filter = SafetyFilter(state_dot.casadi_vectorized, Ts, Tf_hzn_sf, N_sf, quad_params, integrator)
-    
-    def example_usage():
-        u_seq = np.array([[1., 1., 1., 1.]]*N)
-        x_seq = np.vstack([quad_params["default_init_state_np"]]*(N+1))
-        passthrough = safety_filter(u_seq, x_seq, True)
-        computed = safety_filter(u_seq, x_seq, False)
+    # safety_filter = SafetyFilter(state_dot.casadi_vectorized, Ts, Tf_hzn_sf, N_sf, quad_params, integrator)
+    # 
+    # def example_usage():
+    #     u_seq = np.array([[1., 1., 1., 1.]]*N)
+    #     x_seq = np.vstack([quad_params["default_init_state_np"]]*(N+1))
+    #     passthrough = safety_filter(u_seq, x_seq, True)
+    #     computed = safety_filter(u_seq, x_seq, False)
 
     
 

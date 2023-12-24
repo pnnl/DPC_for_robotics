@@ -324,7 +324,7 @@ def run_adv_nav_mj_many(
     r_histories = [np.vstack([ref(1)]*(nstep+1))]*num_runs
 
     np.savez(
-        file = f"data/xu_mpc_wp_p2p_mj_{str(Ts)}.npz",
+        file = f"data/mpc_adv_nav_{str(Ts)}.npz",
         x_history0 = ptu.to_numpy(outputs[0]['X'].squeeze()),
         u_history0 = ptu.to_numpy(outputs[0]['U'].squeeze()),
         x_history1 = ptu.to_numpy(outputs[1]['X'].squeeze()),
