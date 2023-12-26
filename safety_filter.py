@@ -16,10 +16,7 @@ from utils.quad import Animator
 from utils.quad import Animator, plot_mujoco_trajectories_wp_p2p, calculate_mpc_cost, plot_mujoco_trajectories_wp_traj
 from bf import BarrierFunction
 
-class FindSimplexCallback(ca.Callback):
-    def __init__(self, name, opts={}):
-        ca.Callback.__init__(self)
-        self.construct(name, opts)
+
 
 class SafetyFilter:
 
@@ -136,6 +133,20 @@ class SafetyFilter:
         # ----------------------------------
         self.opti_feas = ca.Opti()
         self.opti = ca.Opti()
+
+        if bf is not None:
+            class FindSimplexCallback(ca.Callback):
+                def __init__(self, name, opts={}):
+                    ca.Callback.__init__(self)
+                    self.construct(name, opts)
+
+                def eval(self, arg):
+                    # This method is called at each iteration
+                    # arg will contain information about the current state of the optimization
+                    # Here, you can adjust parameters based on your custom logic
+                    # For example, increment the parameter p by 0.1
+                    new_p_value = opti.value(p) + 0.1
+                    opti.set_value(p, new_p_value)
 
         # State, slack, input variables for  feasibility problem
         self.X0_f   = self.opti_feas.parameter(self.nx, 1)
