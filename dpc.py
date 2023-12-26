@@ -374,32 +374,101 @@ class Dynamics(ode.ODESystem):
         x = x + torch.randn(x.shape, device=ptu.device) * self.x_std
         return self.f(x,u)
 
-def posVel2cyl(state, cyl, radius):
-    x = state[:, 0:1]
-    y = state[:, 2:3]
-    xc = cyl[:, 0:1]
-    yc = cyl[:, 1:2]
+# def posVel2cyl(state, cyl, radius):
+#     pass
 
-    dx = x - xc
-    dy = y - yc
+class posVel2cyl:
 
-    # Calculate the Euclidean distance from each point to the center of the cylinder
-    distance_to_center = (dx**2 + dy**2) ** 0.5
+    def __call__(self, state, cyl, radius):
+        return self.numpy_vectorized(state, cyl, radius)
     
-    # Subtract the radius to get the distance to the cylinder surface
-    distance_to_cylinder = distance_to_center - radius
+    @staticmethod
+    def casadi(state, cyl, radius):
+        x = state[0:1, :]
+        y = state[2:3, :]
+        xc = cyl[0:1, :]
+        yc = cyl[1:2, :]
 
-    xdot = state[:, 1:2]
-    ydot = state[:, 3:4]
+        dx = x - xc
+        dy = y - yc
 
-    # Normalize the direction vector (from the point to the center of the cylinder)
-    dx_normalized = dx / (distance_to_center + 1e-10)  # Adding a small number to prevent division by zero
-    dy_normalized = dy / (distance_to_center + 1e-10)
+        # Calculate the Euclidean distance from each point to the center of the cylinder
+        distance_to_center = (dx**2 + dy**2) ** 0.5
+        
+        # Subtract the radius to get the distance to the cylinder surface
+        distance_to_cylinder = distance_to_center - radius
 
-    # Compute the dot product of the normalized direction vector with the velocity vector
-    velocity_to_cylinder = dx_normalized * xdot + dy_normalized * ydot
+        xdot = state[:, 1:2]
+        ydot = state[:, 3:4]
 
-    return distance_to_cylinder, velocity_to_cylinder
+        # Normalize the direction vector (from the point to the center of the cylinder)
+        dx_normalized = dx / (distance_to_center + 1e-10)  # Adding a small number to prevent division by zero
+        dy_normalized = dy / (distance_to_center + 1e-10)
+
+        # Compute the dot product of the normalized direction vector with the velocity vector
+        velocity_to_cylinder = dx_normalized * xdot + dy_normalized * ydot
+
+        print('fin')
+
+    @staticmethod
+    def pytorch_vectorized(state, cyl, radius):
+        x = state[:, 0:1]
+        y = state[:, 2:3]
+        xc = cyl[:, 0:1]
+        yc = cyl[:, 1:2]
+
+        dx = x - xc
+        dy = y - yc
+
+        # Calculate the Euclidean distance from each point to the center of the cylinder
+        distance_to_center = (dx**2 + dy**2) ** 0.5
+        
+        # Subtract the radius to get the distance to the cylinder surface
+        distance_to_cylinder = distance_to_center - radius
+
+        xdot = state[:, 1:2]
+        ydot = state[:, 3:4]
+
+        # Normalize the direction vector (from the point to the center of the cylinder)
+        dx_normalized = dx / (distance_to_center + 1e-10)  # Adding a small number to prevent division by zero
+        dy_normalized = dy / (distance_to_center + 1e-10)
+
+        # Compute the dot product of the normalized direction vector with the velocity vector
+        velocity_to_cylinder = dx_normalized * xdot + dy_normalized * ydot
+
+        return distance_to_cylinder, velocity_to_cylinder        
+
+    @staticmethod
+    def numpy_vectorized(state, cyl, radius):
+
+        x = state[:, 0:1]
+        y = state[:, 2:3]
+        xc = cyl[:, 0:1]
+        yc = cyl[:, 1:2]
+
+        dx = x - xc
+        dy = y - yc
+
+        # Calculate the Euclidean distance from each point to the center of the cylinder
+        distance_to_center = (dx**2 + dy**2) ** 0.5
+        
+        # Subtract the radius to get the distance to the cylinder surface
+        distance_to_cylinder = distance_to_center - radius
+
+        xdot = state[:, 1:2]
+        ydot = state[:, 3:4]
+
+        # Normalize the direction vector (from the point to the center of the cylinder)
+        dx_normalized = dx / (distance_to_center + 1e-10)  # Adding a small number to prevent division by zero
+        dy_normalized = dy / (distance_to_center + 1e-10)
+
+        # Compute the dot product of the normalized direction vector with the velocity vector
+        velocity_to_cylinder = dx_normalized * xdot + dy_normalized * ydot
+
+        return distance_to_cylinder, velocity_to_cylinder
+    
+
+
 
 @time_function
 def train_wp_p2p(    # recommendations:

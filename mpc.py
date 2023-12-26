@@ -433,7 +433,6 @@ def run_wp_p2p_mj_many(
     print("Average MPC Cost: {:.2f}".format(average_cost))
     print('fin')
 
-
 def run_wp_traj_mj(        
         Ti, Tf, Ts, N, Tf_hzn,
         integrator = 'euler',

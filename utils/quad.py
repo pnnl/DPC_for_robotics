@@ -253,7 +253,8 @@ class Animator:
             ifsave=True,
             reference_type='wp_traj', # 'wp_traj', 'wp_p2p', 'fig8'
             state_prediction=None,
-            save_path='data/media'
+            save_path='data/media',
+            perspective='normal', # 'normal', 'topdown'
         ) -> None:
 
         num_steps = len(times)
@@ -305,6 +306,9 @@ class Animator:
 
         self.fig = plt.figure()
         self.ax = self.fig.add_subplot(projection='3d')
+
+        if perspective == 'topdown':
+            self.ax.view_init(elev=90, azim=270)
 
         # draw the lines between the waypoints
         self.xDes = self.reference_history[:, 0]
@@ -508,3 +512,4 @@ class Animator:
         # plt.close(self.fig)            
         # plt.show()
         return line_ani
+
