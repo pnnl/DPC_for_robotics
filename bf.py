@@ -13,7 +13,7 @@ Method:
 import torch
 import numpy as np
 import utils.pytorch as ptu
-from scipy.spatial import ConvexHull, Delaunay, delaunay_plot_2d
+from scipy.spatial import ConvexHull, Delaunay, delaunay_plot_2d, distance
 from dpc import posVel2cyl
 import matplotlib.pyplot as plt
 import time
@@ -50,15 +50,83 @@ class BarrierFunction:
 
     def __call__(self, x):
         return self.is_in_safe_set(x)
+    
+    def find_tangential_hyperplane_on_pv_hull_nearest_point(self, x):
+        x = np.array(x).flatten()
+        # Calculate the Euclidean distance from the point x to each point in the convex hull
+        distances = np.linalg.norm(self.non_cvx_hull.points - x, axis=1)
+
+        # Find the index of the closest point
+        closest_point_index = np.argmin(distances)
+
+        # Extract the closest point
+        closest_point = self.non_cvx_hull.points[closest_point_index]
+
+        # Calculate the centroids of each simplex
+        simplex_centroids = np.mean(self.non_cvx_hull.points[self.non_cvx_hull.simplices], axis=1)   
+
+        # Compute distances from each centroid to the closest point
+        distances_to_closest_point = np.linalg.norm(simplex_centroids - closest_point, axis=1)
+
+        # Find the index of the closest simplex
+        closest_simplex_index = np.argmin(distances_to_closest_point)
+
+        # Form the tangential hyperplane
+        # closest_simplex = self.cvx_hull.simplices[closest_simplex_index]
+        normal_vector = self.non_cvx_hull.equations[closest_simplex_index][:self.non_cvx_hull.ndim]  # Normal part of the equation
+        offset = self.non_cvx_hull.equations[closest_simplex_index][-1]  # Offset part of the equation
+
+        # The distance to the closest simplex (the minimum distance from the closest point to simplex centroids)
+        distance_to_closest_simplex = distances_to_closest_point[closest_simplex_index]
+
+        print(f'distance to nearest simplex: {distance_to_closest_simplex}')
+        print(f'is in nearest halfspace safe set: {normal_vector.T @ x + offset <= 0}')
+
+        return normal_vector, offset
+
+    def find_tangential_hyperplane_on_cvx_hull_nearest_point(self, x):
+        x = np.array(x).flatten()
+        # Calculate the Euclidean distance from the point x to each point in the convex hull
+        distances = np.linalg.norm(self.cvx_hull.points - x, axis=1)
+
+        # Find the index of the closest point
+        closest_point_index = np.argmin(distances)
+
+        # Extract the closest point
+        closest_point = self.cvx_hull.points[closest_point_index]
+
+        # Calculate the centroids of each simplex
+        simplex_centroids = np.mean(self.cvx_hull.points[self.cvx_hull.simplices], axis=1)
+
+        # Compute distances from each centroid to the closest point
+        distances_to_closest_point = np.linalg.norm(simplex_centroids - closest_point, axis=1)
+
+        # Find the index of the closest simplex
+        closest_simplex_index = np.argmin(distances_to_closest_point)
+
+        # Form the tangential hyperplane
+        # closest_simplex = self.cvx_hull.simplices[closest_simplex_index]
+        normal_vector = self.cvx_hull.equations[closest_simplex_index][:self.cvx_hull.ndim]  # Normal part of the equation
+        offset = self.cvx_hull.equations[closest_simplex_index][-1]  # Offset part of the equation
+
+        # The distance to the closest simplex (the minimum distance from the closest point to simplex centroids)
+        distance_to_closest_simplex = distances_to_closest_point[closest_simplex_index]
+
+        print(f'distance to nearest simplex: {distance_to_closest_simplex}')
+        print(f'is in nearest halfspace safe set: {normal_vector.T @ x + offset <= 0}')
+
+        return normal_vector, offset
 
     # @time_function
     def is_in_safe_set(self, x):
         # x: {x, xdot, y, ydot, z, zdot}
-        satisfy_box = self.cvx_delaunay.find_simplex(x) >= 0 
+        cvx_hyperplane_distances = self.cvx_delaunay.plane_distance(x)
+        satisfy_box = cvx_hyperplane_distances.max() >= 0 and cvx_hyperplane_distances.min() <= 0 # .find_simplex(x) >= 0 
 
         pv = np.hstack(posVel2cyl.numpy_vectorized(x[None,:], self.cylinder_position, self.cylinder_radius)).flatten()
-        satisfy_cyl = self.non_cvx_delaunay.find_simplex(pv) >= 0
-
+        pv_hyperplane_distances = self.non_cvx_delaunay.plane_distance(pv)
+        satisfy_cyl = pv_hyperplane_distances.max() >= 0 and cvx_hyperplane_distances.min() <= 0 # .find_simplex(pv) >= 0
+        # satisfy_cyl = self.non_cvx_delaunay.find_simplex(pv) >= 0
         print(f"box_satisfied: {satisfy_box}")
         print(f"cyl_satisfied: {satisfy_cyl}")
 
@@ -360,10 +428,25 @@ def plot_shifted_fs1_bf(points, simplices, delta, filename='data/paper/cylinder_
     plt.tight_layout()
     plt.savefig(filename)
 
+def test_trajectory(bf, x_history):
+    pass
+
+
+
 if __name__ == "__main__":
 
     log = torch.load('large_data/nav_training_data.pt')
     bf = BarrierFunction(log)
     # bf = generate_bf(log)
+    hull = bf.cvx_hull
+    x = np.array([1.25, 0.2, 2.0, 0.02, 2.0, -0.3])
 
+    # this x was the one given to the safety filter - halfspace says its good
+    x = np.array([0.47738674, 0.8017296 , 1.3384718 , 1.0735897 , 0.65211016,
+       0.3316325 ], dtype=np.float32)
+    # this x was the one that violated the box constraints:
+
+    # x_history = np.load("data/xu_sf_p2p_mj_0.001.npz")['x_history']
+    # point = np.array([1.25, 0.2, 2.0, 0.02, 1.0, -0.3])
+    # obs_history = np.vstack([x_history[:, i] for i in [0,7,1,8,2,9]])
     print('fin')

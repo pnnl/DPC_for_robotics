@@ -6,6 +6,7 @@ import numpy as np
 import neuromancer as nm
 from tqdm import tqdm
 from neuromancer.dynamics import ode, integrators
+import casadi as ca
 
 import utils.pytorch as ptu
 import utils.callback
@@ -398,8 +399,8 @@ class posVel2cyl:
         # Subtract the radius to get the distance to the cylinder surface
         distance_to_cylinder = distance_to_center - radius
 
-        xdot = state[:, 1:2]
-        ydot = state[:, 3:4]
+        xdot = state[1:2, :]
+        ydot = state[3:4, :]
 
         # Normalize the direction vector (from the point to the center of the cylinder)
         dx_normalized = dx / (distance_to_center + 1e-10)  # Adding a small number to prevent division by zero
@@ -408,7 +409,7 @@ class posVel2cyl:
         # Compute the dot product of the normalized direction vector with the velocity vector
         velocity_to_cylinder = dx_normalized * xdot + dy_normalized * ydot
 
-        print('fin')
+        return ca.vertcat(distance_to_cylinder, velocity_to_cylinder)
 
     @staticmethod
     def pytorch_vectorized(state, cyl, radius):
