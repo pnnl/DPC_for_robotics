@@ -26,7 +26,7 @@ class BarrierFunction:
 
         self.cylinder_radius = 0.5
         self.cylinder_position = np.array([[1.,1.]])
-        self.cylinder_margin = 0.2
+        self.cylinder_margin = 0.15
         num_points_considered = 100_000
 
         print('-----------------------------------')
@@ -124,8 +124,8 @@ class BarrierFunction:
         satisfy_box = cvx_hyperplane_distances.max() >= 0 and cvx_hyperplane_distances.min() <= 0 # .find_simplex(x) >= 0 
 
         pv = np.hstack(posVel2cyl.numpy_vectorized(x[None,:], self.cylinder_position, self.cylinder_radius)).flatten()
-        pv_hyperplane_distances = self.non_cvx_delaunay.plane_distance(pv)
-        satisfy_cyl = pv_hyperplane_distances.max() >= 0 and cvx_hyperplane_distances.min() <= 0 # .find_simplex(pv) >= 0
+        pv_hyperplane_distances = self.non_cvx_delaunay.plane_distance(pv - np.array([self.cylinder_margin, 0]))
+        satisfy_cyl = (pv_hyperplane_distances.max() >= 0 and cvx_hyperplane_distances.min() <= 0) or pv[1] > 0 # .find_simplex(pv) >= 0
         # satisfy_cyl = self.non_cvx_delaunay.find_simplex(pv) >= 0
         print(f"box_satisfied: {satisfy_box}")
         print(f"cyl_satisfied: {satisfy_cyl}")

@@ -5,6 +5,8 @@ import neuromancer as nm
 from neuromancer.dynamics import integrators
 import casadi as ca
 import copy
+from tqdm import tqdm
+import time
 
 import utils.pytorch as ptu
 from dpc import posVel2cyl
@@ -411,7 +413,6 @@ class SafetyFilter:
                     self.opti.subject_to(self.a1.T @ obs + self.b1 <= self.Xi[self.nc + ii, kk] - rob_marg)         
 
             elif ii == 1: # the pv constraints
-
                 for kk in range(self.N):
                     if kk > 0.0:
                         rob_marg = kk * delta + Lh_x * Ld * sum([Lf_x**j for j in range(kk)])
@@ -419,6 +420,8 @@ class SafetyFilter:
                         rob_marg = 0.0
                     obs_f = self.dpc_obs_to_pv(ca.vertcat(*[self.X_f[i, kk] for i in [0,7,1,8,2,9]]))
                     obs = self.dpc_obs_to_pv(ca.vertcat(*[self.X[i, kk] for i in [0,7,1,8,2,9]]))
+                    obs_f[0] -= self.bf.cylinder_margin
+                    obs[0] -= self.bf.cylinder_margin
                     self.opti_feas.subject_to(self.a2_f.T @ obs_f + self.b2_f <= self.Xi_f[self.nc + ii, kk] - rob_marg)
                     self.opti.subject_to(self.a2.T @ obs + self.b2 <= self.Xi[self.nc + ii, kk] - rob_marg)         
 
@@ -509,6 +512,8 @@ class SafetyFilter:
                 self.opti.set_value(self.b2, offset_pv)
 
             # Set values to initial condition parameters, set initial values to optimisation parameters
+            if x[0,0] == 1. and x[1,0] == 1.:
+                x[0:2,0] += 1e-3 # avoids being exactly in center of cylinder - confuses cylindrical coordinates
             self.opti_feas.set_value(self.X0_f, x[:,0])
             self.opti_feas.set_initial(self.X_f, self.Xf_warm)
             self.opti_feas.set_initial(self.U_f, self.Uf_warm)
@@ -551,7 +556,7 @@ class SafetyFilter:
                 print(traceback.format_exc())
                 print('------------------------------------INFEASIBILITY---------------------------------------------')
                 print('using nominal DPC control...')
-                return ptu.from_numpy(u[:,0]) # self.opti.debug, feas_sol.value(self.Xi_f), feas_sol.value(self.XiN_f)
+                return ptu.from_numpy(u[:,0]), ptu.from_numpy(self.X_warm) # self.opti.debug, feas_sol.value(self.Xi_f), feas_sol.value(self.XiN_f)
             
             # Save solution for warm start
             self.X_warm = sol.value(self.X)
@@ -900,9 +905,15 @@ def run_nav_mj(
     # load the pretrained policies
     cl_system.nodes[1].load_state_dict(mlp_state_dict)
 
-    X = ptu.from_numpy(quad_params["default_init_state_np"][None,:][None,:].astype(np.float32))
-    X[:,:,7] = 1.6 # xdot adversarial
-    X[:,:,8] = 1.6 # ydot adversarial
+    # X = ptu.from_numpy(quad_params["default_init_state_np"][None,:][None,:].astype(np.float32))
+    # X[:,:,7] = 1.6 # xdot adversarial
+    # X[:,:,8] = 1.6 # ydot adversarial
+
+    X = ptu.tensor([[[  1.       ,   -1.       ,  -0.       ,   1.       ,
+           0.       ,  -0.       ,   0.       ,   0,
+          2.25,  -0.       ,   0.       ,  -0.       ,
+           0.       , 522.98474  , 522.98474  , 522.98474  ,
+         522.98474  ]]])
 
     # X[:,:,0] = 0.45
     # X[:,:,1] = 0.45
@@ -987,41 +998,64 @@ def run_nav_mj_many(
     # load the pretrained policies
     cl_system.nodes[1].load_state_dict(mlp_state_dict)
 
-    X = ptu.from_numpy(quad_params["default_init_state_np"][None,:][None,:].astype(np.float32))
-    X[:,:,7] = 1.6 # xdot adversarial
-    X[:,:,8] = 1.6 # ydot adversarial
+    npoints = 5  # Number of points you want to generate in 2 dimensions ie. 5 == (5x5 grid)
+    xy_values = ptu.from_numpy(np.linspace(-1, 1, npoints))  # Generates 'npoints' values between -10 and 10 for x
+    z_values = ptu.from_numpy(np.linspace(-1, 1, 1))
+    z_values = [ptu.tensor(0.)]
 
-    data = {
-        'X': X,
-        'R': torch.concatenate([ptu.from_numpy(R(1)[None,:][None,:].astype(np.float32))]*nsteps, axis=1),
-        'Cyl': torch.concatenate([ptu.tensor([[[1,1]]])]*nsteps, axis=1),
-    }
-
-    # set the mujoco simulation to the correct initial conditions
-    cl_system.nodes[6].callable.set_state(ptu.to_numpy(data['X'].squeeze().squeeze()))
+    datasets = []
+    for xy in xy_values:
+        v = 2.25 # directly towards the cylinder
+        xr = 1
+        yr = 1
+        x = xy
+        y = -xy
+        vy = v * torch.sin(torch.arctan((yr-y)/(xr-x)))
+        vx = v * torch.cos(torch.arctan((yr-y)/(xr-x)))
+        for z in z_values:
+            datasets.append({
+                'X': ptu.tensor([[[xy,-xy,z,1,0,0,0,vx,vy,0,0,0,0,*[522.9847140714692]*4]]]),
+                'R': torch.concatenate([ptu.from_numpy(R(1)[None,:][None,:].astype(np.float32))]*nsteps, axis=1),
+                'Cyl': ptu.tensor([[[1,1]]*nsteps]),
+            })
 
     # Perform CLP Simulation
-    output = cl_system.forward(data, retain_grad=False, print_loop=True)
+    outputs = []
+    start_time = time.time()
+    for data in tqdm(datasets):
+        # set the mujoco simulation to the correct initial conditions
+        cl_system.nodes[6].callable.set_state(ptu.to_numpy(data['X'].squeeze().squeeze()))
+        cl_system.nodes[3].callable.reset(None)
+        outputs.append(cl_system.forward(data, retain_grad=False))
 
-    # save
-    print("saving the state and input histories...")
-    x_history = np.stack(ptu.to_numpy(output['X'].squeeze()))
-    u_history = np.stack(ptu.to_numpy(output['U'].squeeze()))
-    r_history = np.stack(ptu.to_numpy(output['R'].squeeze()))
+    end_time = time.time()
+    total_time = (end_time - start_time)
+    average_time = total_time / npoints
+
+    print("Average Time: {:.2f} seconds".format(average_time))
+    x_histories = [ptu.to_numpy(outputs[i]['X'].squeeze()) for i in range(npoints)]
+    u_histories = [ptu.to_numpy(outputs[i]['U'].squeeze()) for i in range(npoints)]
+    r_histories = [np.vstack([R(1)]*(nsteps+1))]*npoints
+
+    plot_mujoco_trajectories_wp_p2p(outputs, 'data/paper/dpc_adv_nav.svg')
+
+    average_cost = np.mean([calculate_mpc_cost(x_history, u_history, r_history) for (x_history, u_history, r_history) in zip(x_histories, u_histories, r_histories)])
+
+    print("Average MPC Cost: {:.2f}".format(average_cost))
 
     np.savez(
-        file = f"data/xu_sf_p2p_mj_{str(Ts)}.npz",
-        x_history = x_history,
-        u_history = u_history,
-        r_history = r_history
+        file = f"data/dpc_sf_adv_nav_mj_{str(Ts)}.npz",
+        x_history0 = ptu.to_numpy(outputs[0]['X'].squeeze()),
+        u_history0 = ptu.to_numpy(outputs[0]['U'].squeeze()),
+        x_history1 = ptu.to_numpy(outputs[1]['X'].squeeze()),
+        u_history1 = ptu.to_numpy(outputs[1]['U'].squeeze()),
+        x_history2 = ptu.to_numpy(outputs[2]['X'].squeeze()),
+        u_history2 = ptu.to_numpy(outputs[2]['U'].squeeze()),
+        x_history3 = ptu.to_numpy(outputs[3]['X'].squeeze()),
+        u_history3 = ptu.to_numpy(outputs[3]['U'].squeeze()),
+        x_history4 = ptu.to_numpy(outputs[4]['X'].squeeze()),
+        u_history4 = ptu.to_numpy(outputs[4]['U'].squeeze()),
     )
-
-    plot_mujoco_trajectories_wp_p2p([output], f'data/paper/dpcsf_adv_nav_{str(Ts)}.svg')
-
-    state_prediction = ptu.to_numpy(output['X_planned']).transpose(1, 0, 2)
-
-    animator = Animator(x_history, times, r_history, max_frames=500, save_path=media_save_path, state_prediction=state_prediction, drawCylinder=True, perspective='topdown')
-    animator.animate()
 
     print('fin')
 
@@ -1035,13 +1069,14 @@ if __name__ == "__main__":
     ptu.init_dtype()
     ptu.init_gpu(use_gpu=False)
 
-    Ti, Tf, Ts = 0.0, 3.5, 0.001
+    Ti, Tf, Ts = 0.0, 10.0, 0.001
     N_sf = 30
     N_pred = None
     Tf_hzn_sf, Tf_hzn_pred = 0.50, None # 0.75 works, is best that does
     integrator = euler
 
-    run_nav_mj(Ti, Tf, Ts, N_sf, N_pred, Tf_hzn_sf, Tf_hzn_pred, integrator)
+    run_nav_mj_many(Ti, Tf, Ts, N_sf, N_pred, Tf_hzn_sf, Tf_hzn_pred, integrator)
+    # run_nav_mj(Ti, Tf, Ts, N_sf, N_pred, Tf_hzn_sf, Tf_hzn_pred, integrator)
     # run_nav_mj_no_event_trigger(Ti, Tf, Ts, N_sf, N_pred, Tf_hzn_sf, Tf_hzn_pred, integrator)
     # run_wp_p2p(Ti, Tf, Ts, N_sf, N_pred, Tf_hzn_sf, Tf_hzn_pred, integrator)
 
