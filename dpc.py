@@ -1639,6 +1639,9 @@ def train_lyap_nav(    # recommendations:
 
     print('fin')
 
+def analyse_traj(filename='data/'):
+    pass
+
 if __name__ == "__main__":
 
     # best setup below for T1 desktop

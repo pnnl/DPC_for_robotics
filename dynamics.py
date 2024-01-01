@@ -1184,6 +1184,7 @@ class mujoco_quad:
 
         # added during sysID phase
         self.t = self.Ti
+    
 
 if __name__ == "__main__":
 

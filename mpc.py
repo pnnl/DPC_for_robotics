@@ -409,10 +409,12 @@ def run_wp_p2p_mj_many(
     print("Average Time: {:.2f} seconds".format(average_time))
     x_histories = [ptu.to_numpy(outputs[i]['X'].squeeze()) for i in range(num_runs)]
     u_histories = [ptu.to_numpy(outputs[i]['U'].squeeze()) for i in range(num_runs)]
-    r_histories = [np.vstack([ref(1)]*(nstep+1))]*num_runs
+    r = ref(1)
+    r[2] = -1
+    r_histories = [np.vstack([r]*(nstep+1))]*num_runs
 
     np.savez(
-        file = f"data/xu_mpc_wp_p2p_mj_{str(Ts)}.npz",
+        file = f"data/vtnmpc_nav_{str(Ts)}.npz",
         x_history0 = ptu.to_numpy(outputs[0]['X'].squeeze()),
         u_history0 = ptu.to_numpy(outputs[0]['U'].squeeze()),
         x_history1 = ptu.to_numpy(outputs[1]['X'].squeeze()),
@@ -596,12 +598,34 @@ def animate_nav(
     animator = Animator(state, times, state, max_frames=500, save_path='data', state_prediction=ctrl_pred_x, drawCylinder=True)
     animator.animate()
 
+def analyse_nav(filename='data/nmpc_nav.npz'):
+    data = np.load(filename)
+    quad_params = get_quad_params()
+    x_histories = [data[f'x_history{i}'] for i in range(4)]
+    u_histories = [data[f'u_history{i}'] for i in range(4)]
+    r_history = quad_params['default_init_state_np']
+    r_history[0], r_history[1], r_history[2] = 2, 2, -1
+    r_histories = np.vstack([r_history]*x_histories[0].shape[0])
+    average_cost = np.mean([calculate_mpc_cost(x_history, u_history, r_history) for (x_history, u_history, r_history) in zip(x_histories, u_histories, r_histories)])
+
+    print('fin')
+
+def analyse_traj(filename='data/xu_mpc_wp_traj_mj_0.001.npz'):
+    data = np.load(filename)
+
+    animator = Animator(x_histories[0], true_times, r_histories[0], max_frames=500, save_path='data', state_prediction=ctrl_pred_x, drawCylinder=False)
+    animator.animate()
+
+    print('fin')
 
 if __name__ == "__main__":
 
 
     ptu.init_dtype()
     ptu.init_gpu()
+
+    # analyse_traj()
+    # analyse_nav()
 
     Ts = 0.001
     Tf_hzn = 2.0
@@ -615,9 +639,9 @@ if __name__ == "__main__":
 
     # run_wp_p2p_mj(Ti,Tf,Ts,N,Tf_hzn,obstacle_opts)
     # run_wp_traj_mj(Ti,20,Ts,N,0.5)
-    # run_wp_p2p_mj_many(Ti,Tf,Ts,N,Tf_hzn,obstacle_opts)
+    run_wp_p2p_mj_many(Ti,Tf,Ts,N,Tf_hzn,obstacle_opts)
     # run_wp_p2p_mj_many(Ti,Tf,0.01,N,Tf_hzn,obstacle_opts)
-    run_adv_nav_mj_many(Ti,Tf,0.01,N,Tf_hzn,obstacle_opts)
+    # run_adv_nav_mj_many(Ti,Tf,0.01,N,Tf_hzn,obstacle_opts)
 
     quad_params = get_quad_params()
     integrator = "euler"

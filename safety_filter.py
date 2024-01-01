@@ -16,7 +16,7 @@ from pid import get_ctrl_params, PID
 import reference
 from utils.quad import Animator
 from utils.quad import Animator, plot_mujoco_trajectories_wp_p2p, calculate_mpc_cost, plot_mujoco_trajectories_wp_traj
-from bf import BarrierFunction
+from barrier_function import BarrierFunction
 from scipy.spatial import distance
 
 class SafetyFilterOld:
