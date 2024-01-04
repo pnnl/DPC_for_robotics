@@ -39,8 +39,14 @@ class BarrierFunction:
         print('constructing non-cvx constraint safe set...')
         self.non_cvx_delaunay, self.non_cvx_hull = self.construct_non_cvx_constraint_safe_set(processed_data)
 
+        print('finding centroids...')
+        self.non_cvx_simplex_centroids = np.mean(self.non_cvx_hull.points[self.non_cvx_hull.simplices], axis=1)
+
         print('constructing cvx constraint safe set (can take a while)...')
         self.cvx_delaunay, self.cvx_hull = self.construct_cvx_constraint_safe_set(processed_data)
+
+        print('finding centroids...')
+        self.cvx_simplex_centroids = np.mean(self.cvx_hull.points[self.cvx_hull.simplices], axis=1)
 
         print('evaluating combined safe sets for first time... (can take time - scipy cython functions compiling)')
         _ = self.is_in_safe_set(np.array([0.,0.,0.,0.,0.,0.]))
@@ -48,8 +54,63 @@ class BarrierFunction:
         print('evaluating for a second time - should be fast now...')
         _ = self.is_in_safe_set(np.array([0.,0.,0.,0.,0.,0.]))
 
+        print('finding closest halfspace to arbitrary point for initialisation of directed search...')
+        dummy_point = np.zeros([6])
+        pv_dummy_point = posVel2cyl.numpy_vectorized(dummy_point[None,:], np.array([[1.,1.]]), 0.5)
+
+        _, _, self.current_cvx_simplex = self.find_tangential_hyperplane_on_cvx_hull_nearest_point(dummy_point)
+        _, _, self.current_non_cvx_simplex = self.find_tangential_hyperplane_on_pv_hull_nearest_point(pv_dummy_point)
+
+        print('testing directed search cvx...')
+        self.directed_search_cvx(dummy_point, search_distance=2, num_iters=10)
+
+        print('initialisation complete')
+
+        print('plotting the 2d convex hull of non-cvx transformed constraints...')
+        c = np.array([[1.,1.]]*processed_data.shape[0])
+        pv = np.hstack(posVel2cyl.numpy_vectorized(processed_data, c, self.cylinder_radius))
+        points = pv[self.non_cvx_hull.vertices]
+        simplices = self.non_cvx_delaunay.simplices
+        plot_shifted_fs1_bf(points, simplices, delta=1.0)
+
     def __call__(self, x):
         return self.is_in_safe_set(x)
+    
+    def directed_search_cvx_step(self, x, search_distance=1):
+
+        neighbors = self.cvx_hull.neighbors[self.current_cvx_simplex]
+
+        further_neighbours = []
+        for i, neighbour in enumerate(neighbors):
+            further_neighbours.append(self.cvx_hull.neighbors[neighbour])
+
+        neighbour_centroids = self.cvx_simplex_centroids[neighbors]
+
+        all_centroids = np.vstack([self.cvx_simplex_centroids[self.current_cvx_simplex], neighbour_centroids])
+
+        distances_to_closest_point = np.linalg.norm(all_centroids - x, axis=1)
+
+        closest_simplex = np.argmin(distances_to_closest_point)
+
+        if closest_simplex == 0:
+            # self.current_cvx_simplex remains the same
+            return self.current_cvx_simplex, True
+        else:
+            self.current_cvx_simplex = neighbors[closest_simplex - 1] # shift back by 1 to compensate for previous vstack
+            return self.current_cvx_simplex, False
+
+    def directed_search_cvx(self, x, search_distance=2, num_iters=10):
+        for i in range(num_iters):
+            _, done = self.directed_search_cvx_step(x, search_distance=search_distance)
+            if done is True:
+                break
+
+        normal_vector = self.cvx_hull.equations[self.current_cvx_simplex][:self.cvx_hull.ndim]  # Normal part of the equation
+        offset = self.cvx_hull.equations[self.current_cvx_simplex][-1]  # Offset part of the equation
+        return normal_vector, offset, self.current_cvx_simplex
+
+    def directed_search_non_cvx(self, x):
+        pass
     
     def find_tangential_hyperplane_on_pv_hull_nearest_point(self, x):
         x = np.array(x).flatten()
@@ -82,7 +143,7 @@ class BarrierFunction:
         print(f'distance to nearest simplex: {distance_to_closest_simplex}')
         print(f'is in nearest halfspace safe set: {normal_vector.T @ x + offset <= 0}')
 
-        return normal_vector, offset
+        return normal_vector, offset, closest_simplex_index
 
     def find_tangential_hyperplane_on_cvx_hull_nearest_point(self, x):
         x = np.array(x).flatten()
@@ -99,6 +160,7 @@ class BarrierFunction:
         simplex_centroids = np.mean(self.cvx_hull.points[self.cvx_hull.simplices], axis=1)
 
         # Compute distances from each centroid to the closest point
+        # distances_to_closest_point = np.linalg.norm(simplex_centroids - closest_point, axis=1)
         distances_to_closest_point = np.linalg.norm(simplex_centroids - closest_point, axis=1)
 
         # Find the index of the closest simplex
@@ -115,7 +177,7 @@ class BarrierFunction:
         print(f'distance to nearest simplex: {distance_to_closest_simplex}')
         print(f'is in nearest halfspace safe set: {normal_vector.T @ x + offset <= 0}')
 
-        return normal_vector, offset
+        return normal_vector, offset, closest_simplex_index
 
     # @time_function
     def is_in_safe_set(self, x):
@@ -297,7 +359,7 @@ def generate_bf(history):
     # Construct the Cylinder Constrait Convex Hull
     # --------------------------------------------
     c = np.array([[1.,1.]]*successes.shape[0])
-    pv = np.hstack(posVel2cyl(successes, c, cylinder_radius))
+    pv = np.hstack(posVel2cyl.numpy_vectorized(successes, c, cylinder_radius))
     
     # we only care about points moving towards the cylinder
     pv_pos = pv[pv[:, 1] >= 0]
@@ -311,10 +373,10 @@ def generate_bf(history):
     # optional plotting:
     # _ = delaunay_plot_2d(cyl_delaunay)
     # plt.savefig('data/paper/cylinder_constraint_cvx_hull.svg')
-    # points = pv_pos_lim[cyl_hull.vertices]
-    # simplices = cyl_delaunay.simplices
+    points = pv_pos_lim[cyl_hull.vertices]
+    simplices = cyl_delaunay.simplices
 
-    # plot_shifted_fs1_bf(points, simplices, delta=1.0)
+    plot_shifted_fs1_bf(points, simplices, delta=1.0)
 
     def cyl_bf(x):
         pv = np.hstack(posVel2cyl(x[None,:], c[:1,:], cylinder_radius)).flatten()
@@ -427,6 +489,9 @@ def plot_shifted_fs1_bf(points, simplices, delta, filename='data/paper/cylinder_
 
     plt.tight_layout()
     plt.savefig(filename)
+    plt.savefig(filename[:-4] + '.eps')
+
+    print('fin')
 
 def test_trajectory(bf, x_history):
     pass
@@ -436,8 +501,8 @@ def test_trajectory(bf, x_history):
 if __name__ == "__main__":
 
     log = torch.load('large_data/nav_training_data.pt')
-    bf = BarrierFunction(log)
     # bf = generate_bf(log)
+    bf = BarrierFunction(log)
     hull = bf.cvx_hull
     x = np.array([1.25, 0.2, 2.0, 0.02, 2.0, -0.3])
 

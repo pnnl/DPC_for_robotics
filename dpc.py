@@ -982,7 +982,7 @@ def run_adv_nav_mj(
         x_r, r_r = x[:, idx], r[:, idx]
         x_r = torch.clip(x_r, min=ptu.tensor(-3.), max=ptu.tensor(3.))
         r_r = torch.clip(r_r, min=ptu.tensor(-3.), max=ptu.tensor(3.))
-        c_pos, c_vel = posVel2cyl(x_r, c, radius)
+        c_pos, c_vel = posVel2cyl.pytorch_vectorized(x_r, c, radius)
         return torch.hstack([r_r - x_r, c_pos, c_vel])
     process_policy_input_node = nm.system.Node(process_policy_input, ['X', 'R', 'Cyl'], ['Obs'], name='state_selector')
     node_list.append(process_policy_input_node)
@@ -1032,9 +1032,9 @@ def run_adv_nav_mj(
 
     datasets = []
     for xy in tqdm(xy_values):
-        v = 1.6 # directly towards the cylinder
-        xr = 2
-        yr = 2
+        v = 2.25 # directly towards the cylinder
+        xr = 1
+        yr = 1
         x = xy
         y = -xy
         vy = v * torch.sin(torch.arctan((yr-y)/(xr-x)))
@@ -1287,7 +1287,7 @@ def run_wp_traj_mj(
 
     if save is True:
         np.savez(
-            file = f"data/xu_fig8_mj_{str(Ts)}.npz",
+            file = f"data/paper/dpc_traj.npz",
             x_history = x_history,
             u_history = u_history,
             r_history = r_history
@@ -1299,13 +1299,19 @@ def run_wp_traj_mj(
     r_histories = [ptu.to_numpy(output['R'].squeeze())]
 
     plot_mujoco_trajectories_wp_traj([output], 'data/paper/dpc_traj.svg')
+    plot_mujoco_trajectories_wp_traj([output], 'data/paper/dpc_traj.eps')
+
+    offset = 0.7 # seconds
+    offset_idx = int(offset*1/Ts)
+    start = np.vstack([r_histories[0][0,:]]*offset_idx)
+    r_histories = [np.vstack([start, r_histories[0][:-offset_idx]])]
 
     average_cost = np.mean([calculate_mpc_cost(x_history, u_history, r_history) for (x_history, u_history, r_history) in zip(x_histories, u_histories, r_histories)])
 
     print("Average MPC Cost: {:.2f}".format(average_cost))
 
 
-    animator = Animator(x_history, times, r_history, max_frames=500, save_path=media_save_path, state_prediction=None, drawCylinder=False)
+    animator = Animator(x_history, times, r_histories[0], max_frames=500, save_path=media_save_path, state_prediction=None, drawCylinder=False)
     animator.animate()
 
 @time_function
@@ -1654,10 +1660,10 @@ if __name__ == "__main__":
     ptu.init_gpu(use_gpu=False)
 
     # train_lyap_nav(iterations=2, epochs=10, batch_size=5000, minibatch_size=10, nstep=100, lr=0.05, Ts=0.1, save=True)
-    run_adv_nav_mj(0, 5.0, 0.001)
+    # run_adv_nav_mj(0, 10.0, 0.001)
     # run_wp_p2p_hl(0, 5, 0.001)
     # run_wp_p2p_mj(0, 5.0, 0.001)
-    # run_wp_traj_mj(0, 20.0, 0.001)
+    run_wp_traj_mj(0, 20.0, 0.001, save=True)
     # run_fig8_mj(0.0, 10.0, 0.001)
 
     # train_wp_p2p(iterations=2, epochs=10, batch_size=5000, minibatch_size=10, nstep=100, lr=0.05, Ts=0.1, save=False)

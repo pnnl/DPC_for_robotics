@@ -52,7 +52,7 @@ class SafetyFilterOld:
         # alpha = 10000.0  # Gain term required to be large as per Wabersich2022 paper
         alpha = 1000000.0
         alpha2 = 1.0 # Multiplication factor for feasibility parameters
-        Lh_x, Ld, Lf_x, Lhf_x = 0, 0, 0, 0
+        Lh_x, Ld, Lf_x, Lhf_x = 1.0, 0.01, 1.0, 1.0 # 0., 0., 0., 0.
 
         # Define Box Constraints
         # -------------------------
@@ -497,7 +497,7 @@ class SafetyFilter:
             if self.bf is not None:
                 # the convex hull
                 obs = ca.vertcat(*[x[i, :] for i in [0,7,1,8,2,9]])
-                normal_vec, offset = self.bf.find_tangential_hyperplane_on_cvx_hull_nearest_point(obs)
+                normal_vec, offset, _ = self.bf.find_tangential_hyperplane_on_cvx_hull_nearest_point(obs)
                 self.opti_feas.set_value(self.a1_f, normal_vec)
                 self.opti_feas.set_value(self.b1_f, offset)
                 self.opti.set_value(self.a1, normal_vec)
@@ -505,7 +505,7 @@ class SafetyFilter:
 
                 # the pv convex hull
                 pv = self.dpc_obs_to_pv(obs)
-                normal_vec_pv, offset_pv = self.bf.find_tangential_hyperplane_on_pv_hull_nearest_point(pv)
+                normal_vec_pv, offset_pv, _ = self.bf.find_tangential_hyperplane_on_pv_hull_nearest_point(pv)
                 self.opti_feas.set_value(self.a2_f, normal_vec_pv)
                 self.opti_feas.set_value(self.b2_f, offset_pv)
                 self.opti.set_value(self.a2, normal_vec_pv)
@@ -1059,6 +1059,114 @@ def run_nav_mj_many(
 
     print('fin')
 
+
+def run_nav_mj_many2(
+        Ti, Tf, Ts,
+        N_sf, N_pred, Tf_hzn_sf, Tf_hzn_pred,
+        integrator = 'euler',
+        policy_save_path = 'data/',
+        media_save_path = 'data/training/',
+    ):
+
+    times = np.arange(Ti, Tf, Ts)
+    nsteps = len(times)
+    quad_params = get_quad_params()
+    ctrl_params = get_ctrl_params()
+    mlp_state_dict = torch.load(policy_save_path + 'nav_policy.pth')
+
+    # safe set violation detection
+    log = torch.load('large_data/nav_training_data.pt')
+    bf = BarrierFunction(log)
+    safety_filter = SafetyFilter(state_dot.casadi_vectorized, Ts, Tf_hzn_sf, N_sf, quad_params, euler, bf=bf)
+    R = reference.waypoint('wp_p2p', average_vel=1.0)
+
+    node_list = get_nominal_control_system_nodes(quad_params, ctrl_params, Ts)
+
+    # in_safe_set = lambda x, bf=bf: ptu.tensor(bf(ptu.to_numpy(x.flatten()[0:6]))).unsqueeze(0).unsqueeze(0) == False
+    def in_safe_set(obs, bf=bf):
+        safe = ptu.tensor(bf(ptu.to_numpy(obs.flatten()[0:6]))).unsqueeze(0).unsqueeze(0)
+        violation = safe == False
+        if violation == True:
+            print('fin')
+        return violation
+    in_safe_set_node = nm.system.Node(in_safe_set, input_keys=['Obs_CylPV'], output_keys=['Violation'])
+    node_list.append(in_safe_set_node)
+
+    def filter(x_seq, u_seq, violation):
+        u, x_planned = safety_filter(x_seq, u_seq, violation)
+        return u.unsqueeze(0), x_planned
+    filter_node = nm.system.Node(filter, input_keys=['X', 'U', 'Violation'], output_keys=['U_filtered', 'X_planned'], name='dynamics')
+    node_list.append(filter_node)
+
+    sys = mujoco_quad(state=quad_params["default_init_state_np"], quad_params=quad_params, Ti=Ti, Tf=Tf, Ts=Ts, integrator=integrator)
+    sys_node = nm.system.Node(sys, input_keys=['X', 'U_filtered'], output_keys=['X'], name='dynamics')
+    node_list.append(sys_node)
+
+    cl_system = nm.system.System(node_list, nsteps=nsteps)
+
+    # load the pretrained policies
+    cl_system.nodes[1].load_state_dict(mlp_state_dict)
+
+    npoints = 5  # Number of points you want to generate in 2 dimensions ie. 5 == (5x5 grid)
+    xy_values = ptu.from_numpy(np.linspace(-1, 1, npoints))  # Generates 'npoints' values between -10 and 10 for x
+    z_values = ptu.from_numpy(np.linspace(-1, 1, 1))
+    z_values = [ptu.tensor(0.)]
+
+    datasets = []
+    for xy in xy_values:
+        v = 2.25 # directly towards the cylinder
+        xr = 1
+        yr = 1
+        x = xy
+        y = -xy
+        vy = v * torch.sin(torch.arctan((yr-y)/(xr-x)))
+        vx = v * torch.cos(torch.arctan((yr-y)/(xr-x)))
+        for z in z_values:
+            datasets.append({
+                'X': ptu.tensor([[[xy,-xy,z,1,0,0,0,vx,vy,0,0,0,0,*[522.9847140714692]*4]]]),
+                'R': torch.concatenate([ptu.from_numpy(R(1)[None,:][None,:].astype(np.float32))]*nsteps, axis=1),
+                'Cyl': ptu.tensor([[[1,1]]*nsteps]),
+            })
+
+    # Perform CLP Simulation
+    outputs = []
+    start_time = time.time()
+    for data in tqdm(datasets):
+        # set the mujoco simulation to the correct initial conditions
+        cl_system.nodes[6].callable.set_state(ptu.to_numpy(data['X'].squeeze().squeeze()))
+        cl_system.nodes[3].callable.reset(None)
+        outputs.append(cl_system.forward(data, retain_grad=False))
+
+    end_time = time.time()
+    total_time = (end_time - start_time)
+    average_time = total_time / npoints
+
+    print("Average Time: {:.2f} seconds".format(average_time))
+    x_histories = [ptu.to_numpy(outputs[i]['X'].squeeze()) for i in range(npoints)]
+    u_histories = [ptu.to_numpy(outputs[i]['U'].squeeze()) for i in range(npoints)]
+    r_histories = [np.vstack([R(1)]*(nsteps+1))]*npoints
+
+    plot_mujoco_trajectories_wp_p2p(outputs, 'data/paper/dpc_adv_nav.svg')
+
+    average_cost = np.mean([calculate_mpc_cost(x_history, u_history, r_history) for (x_history, u_history, r_history) in zip(x_histories, u_histories, r_histories)])
+
+    print("Average MPC Cost: {:.2f}".format(average_cost))
+
+    np.savez(
+        file = f"data/dpc_sf_adv_nav_mj_{str(Ts)}.npz",
+        x_history0 = ptu.to_numpy(outputs[0]['X'].squeeze()),
+        u_history0 = ptu.to_numpy(outputs[0]['U'].squeeze()),
+        x_history1 = ptu.to_numpy(outputs[1]['X'].squeeze()),
+        u_history1 = ptu.to_numpy(outputs[1]['U'].squeeze()),
+        x_history2 = ptu.to_numpy(outputs[2]['X'].squeeze()),
+        u_history2 = ptu.to_numpy(outputs[2]['U'].squeeze()),
+        x_history3 = ptu.to_numpy(outputs[3]['X'].squeeze()),
+        u_history3 = ptu.to_numpy(outputs[3]['U'].squeeze()),
+        x_history4 = ptu.to_numpy(outputs[4]['X'].squeeze()),
+        u_history4 = ptu.to_numpy(outputs[4]['U'].squeeze()),
+    )
+
+    print('fin')
 
 if __name__ == "__main__":
 
