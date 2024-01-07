@@ -1114,7 +1114,7 @@ def run_wp_p2p_mj(
         x_r, r_r = x[:, idx], r[:, idx]
         x_r = torch.clip(x_r, min=ptu.tensor(-3.), max=ptu.tensor(3.))
         r_r = torch.clip(r_r, min=ptu.tensor(-3.), max=ptu.tensor(3.))
-        c_pos, c_vel = posVel2cyl(x_r, c, radius)
+        c_pos, c_vel = posVel2cyl.numpy_vectorized(x_r, c, radius)
         return torch.hstack([r_r - x_r, c_pos, c_vel])
     process_policy_input_node = nm.system.Node(process_policy_input, ['X', 'R', 'Cyl'], ['Obs'], name='state_selector')
     node_list.append(process_policy_input_node)
@@ -1194,7 +1194,7 @@ def run_wp_p2p_mj(
     u_histories = [ptu.to_numpy(outputs[i]['U'].squeeze()) for i in range(npoints)]
     r_histories = [np.vstack([R(1)]*(nstep+1))]*npoints
 
-    plot_mujoco_trajectories_wp_p2p(outputs, 'data/paper/dpc_adv_nav.svg')
+    plot_mujoco_trajectories_wp_p2p(outputs, 'data/paper/dpc_nav.svg')
 
     average_cost = np.mean([calculate_mpc_cost(x_history, u_history, r_history) for (x_history, u_history, r_history) in zip(x_histories, u_histories, r_histories)])
 
@@ -1662,8 +1662,8 @@ if __name__ == "__main__":
     # train_lyap_nav(iterations=2, epochs=10, batch_size=5000, minibatch_size=10, nstep=100, lr=0.05, Ts=0.1, save=True)
     # run_adv_nav_mj(0, 10.0, 0.001)
     # run_wp_p2p_hl(0, 5, 0.001)
-    # run_wp_p2p_mj(0, 5.0, 0.001)
-    run_wp_traj_mj(0, 20.0, 0.001, save=True)
+    run_wp_p2p_mj(0, 5.0, 0.001)
+    # run_wp_traj_mj(0, 20.0, 0.001, save=True)
     # run_fig8_mj(0.0, 10.0, 0.001)
 
     # train_wp_p2p(iterations=2, epochs=10, batch_size=5000, minibatch_size=10, nstep=100, lr=0.05, Ts=0.1, save=False)
