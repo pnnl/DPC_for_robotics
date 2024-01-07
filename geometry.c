@@ -69,8 +69,9 @@ typedef struct {
 void InstantiateConvexHull(ConvexHull* hull, 
                            double* points_array, int num_points, 
                            int* simplices_array, int num_simplices,
-                           int* neighbors_array, double* centroid_data, // Optional, depends on your needs
+                           int* neighbors_array, double* centroid_data,
                            int dimension) {
+                            
     // Step 1: Initialize the points in the convex hull
     hull->points = (Point*)malloc(num_points * sizeof(Point));
     for (int i = 0; i < num_points; i++) {
@@ -106,8 +107,8 @@ void InstantiateConvexHull(ConvexHull* hull,
             hull->simplices[i].centroid->coordinates[j] = centroid_data[i * dimension + j];
         }
         
-        // Initialize directions, or other attributes if needed
-        // ...
+        // Initialize directions
+
     }
     hull->numSimplices = num_simplices;
 
@@ -115,7 +116,7 @@ void InstantiateConvexHull(ConvexHull* hull,
     hull->numSimplices = num_simplices;
     hull->dimension = dimension;
 
-    // Step 4: Handle errors and edge cases (not shown here)
+    // Step 4: Handle errors and edge cases
 }
 
 
