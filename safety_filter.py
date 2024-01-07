@@ -7,6 +7,7 @@ import casadi as ca
 import copy
 from tqdm import tqdm
 import time
+from utils.time import time_function
 
 import utils.pytorch as ptu
 from dpc import posVel2cyl
@@ -974,6 +975,7 @@ def run_nav_mj_many(
     node_list = get_nominal_control_system_nodes(quad_params, ctrl_params, Ts)
 
     # in_safe_set = lambda x, bf=bf: ptu.tensor(bf(ptu.to_numpy(x.flatten()[0:6]))).unsqueeze(0).unsqueeze(0) == False
+    @time_function
     def in_safe_set(obs, bf=bf):
         safe = ptu.tensor(bf(ptu.to_numpy(obs.flatten()[0:6]))).unsqueeze(0).unsqueeze(0)
         violation = safe == False
@@ -1083,6 +1085,7 @@ def run_nav_mj_many2(
     node_list = get_nominal_control_system_nodes(quad_params, ctrl_params, Ts)
 
     # in_safe_set = lambda x, bf=bf: ptu.tensor(bf(ptu.to_numpy(x.flatten()[0:6]))).unsqueeze(0).unsqueeze(0) == False
+    @time_function
     def in_safe_set(obs, bf=bf):
         safe = ptu.tensor(bf(ptu.to_numpy(obs.flatten()[0:6]))).unsqueeze(0).unsqueeze(0)
         violation = safe == False

@@ -112,6 +112,7 @@ class BarrierFunction:
     def directed_search_non_cvx(self, x):
         pass
     
+    @time_function
     def find_tangential_hyperplane_on_pv_hull_nearest_point(self, x):
         x = np.array(x).flatten()
         # Calculate the Euclidean distance from the point x to each point in the convex hull
@@ -145,6 +146,7 @@ class BarrierFunction:
 
         return normal_vector, offset, closest_simplex_index
 
+    @time_function
     def find_tangential_hyperplane_on_cvx_hull_nearest_point(self, x):
         x = np.array(x).flatten()
         # Calculate the Euclidean distance from the point x to each point in the convex hull

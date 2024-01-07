@@ -117,6 +117,9 @@ def search_convex_hull(hull, simplex_idx, search_step_depth, outlier_point):
             simplex_idx = neighbors[min_idx]
             # return np.array([neighbors[min_idx]])  # Found the closest point
 
+def search_convex_hull_physics_informed(hull, old_simplex, old_point, search_step_depth, point):
+    pass
+
 import cProfile
 cProfile.run('search_convex_hull(hull, simplex_idx, search_step_depth, outlier_point)')
 # cProfile.run('control()')
