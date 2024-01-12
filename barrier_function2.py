@@ -64,9 +64,6 @@ class BarrierFunction:
             return search_space[closest_simplex_idx], False
 
 
-
-        print('fin')
-
     def find_new_neighbors(self, hull, simplex_idx, search_step_depth, previously_visited=None):
         # Get all neighbors until search_depth is satisfied
         ordered_neighbors = []

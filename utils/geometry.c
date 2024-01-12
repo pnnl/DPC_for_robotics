@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <math.h>
 #include <float.h> // For DBL_MAX
+#include <stdbool.h> // for the boolean checks
 
 // =============== //
 // Data Structures //
@@ -161,6 +162,29 @@ void InstantiateConvexHull(ConvexHull* hull,
     // Step 4: Handle errors and edge cases
 }
 
+// ================== //
+// Utility Functions  //
+// ================== //
+
+// Function to check if an integer is in an array
+bool is_in_array(int value, int* array, int size) {
+    for (int i = 0; i < size; ++i) {
+        if (array[i] == value) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Function to add unique elements to an array
+int add_unique(int* array, int value, int size) {
+    if (!is_in_array(value, array, size)) {
+        array[size] = value;
+        return 1; // Added new element
+    }
+    return 0; // Element was already in the array
+}
+
 // Function to calculate Euclidean distance between two points in N-dimensional space
 double EuclideanDistance(Point* p1, Point* p2, int dimension) {
     double distance = 0.0;
@@ -170,6 +194,64 @@ double EuclideanDistance(Point* p1, Point* p2, int dimension) {
     }
     return sqrt(distance);
 }
+
+// ====================== //
+// The Meat and Potatoes //
+// ====================== //
+
+// The sixth-degree search function
+int SixthDegreeSearch(ConvexHull* hull, int candidate, Point* dummy_point) {
+    double d_ctrl = EuclideanDistance(hull->simplices[candidate].centroid, dummy_point, hull->dimension);
+    int MAX_NEIGHBORS = 93750; // 6 * 5 ^ 6
+    int n6[MAX_NEIGHBORS]; // Assuming a maximum number of neighbors
+    int n6_size = 0;
+
+    // Iterating through neighbors to the sixth degree
+    for (int i = 0; i < hull->simplices[candidate].numVertices; ++i) {
+        int n1 = hull->simplices[candidate].neighborIndices[i];
+        for (int j = 0; j < hull->simplices[n1].numVertices; ++j) {
+            int n2 = hull->simplices[n1].neighborIndices[j];
+            for (int k = 0; k < hull->simplices[n2].numVertices; ++k) {
+                int n3 = hull->simplices[n2].neighborIndices[k];
+                for (int l = 0; l < hull->simplices[n3].numVertices; ++l) {
+                    int n4 = hull->simplices[n3].neighborIndices[l];
+                    for (int m = 0; m < hull->simplices[n4].numVertices; ++m) {
+                        int n5 = hull->simplices[n4].neighborIndices[m];
+                        n6_size += add_unique(n6, hull->simplices[n5].neighborIndices[k], n6_size);
+                    }
+                }
+            }
+        }
+    }
+
+    // Filter out the candidate
+    int n6m[MAX_NEIGHBORS]; // Filtered list
+    int n6m_size = 0;
+    for (int i = 0; i < n6_size; ++i) {
+        if (n6[i] != candidate) {
+            n6m[n6m_size++] = n6[i];
+        }
+    }
+
+    // Find the closest centroid among neighbors
+    double min_distance = DBL_MAX;
+    int closest_centroid = -1;
+    for (int i = 0; i < n6m_size; ++i) {
+        double distance = EuclideanDistance(hull->simplices[n6m[i]].centroid, dummy_point, hull->dimension);
+        if (distance < min_distance) {
+            min_distance = distance;
+            closest_centroid = n6m[i];
+        }
+    }
+
+    // Compare and return the result
+    if (d_ctrl <= min_distance) {
+        return candidate;
+    } else {
+        return closest_centroid;
+    }
+}
+
 
 // Function to find the index of the nearest simplex to a given point
 void FindNearestSimplexBruteForce(ConvexHull* hull, Point* p) {
@@ -240,14 +322,20 @@ void FindNearestSimplexDirected(ConvexHull* hull, int guess, Point* p) {
                 nearest_simplex = neighbor_idx;
             }
 
-            //printf("new_min_distance: %f\n", min_distance);
-            //printf("current nearest simplex: %d\n", nearest_simplex);
+            // printf("new_min_distance: %f\n", min_distance);
+            // printf("current nearest simplex: %d\n", nearest_simplex);
         }
 
         // Check if the current guess is the nearest
         if (nearest_simplex == current_guess) {
-            printf("found!\n");
-            found = 1;
+            // printf("checking 6th degree!\n");
+            int checked_guess = SixthDegreeSearch(hull, current_guess, p);
+            if (nearest_simplex == checked_guess) {
+                found = 1;
+            }
+            else {
+                current_guess = checked_guess;
+            }            
         } else {
             // Update the guess for the next iteration
             current_guess = nearest_simplex;
@@ -260,8 +348,3 @@ void FindNearestSimplexDirected(ConvexHull* hull, int guess, Point* p) {
     printf("new_min_distance: %f\n", min_distance);
 
 }
-
-
-
-
-
