@@ -41,18 +41,25 @@ typedef struct {
 // Convex Hull Constructor //
 // ======================= //
 
+// Function to create a new ConvexHull instance and return a handle
+ConvexHull* CreateConvexHull() {
+    ConvexHull* hull = (ConvexHull*)malloc(sizeof(ConvexHull));
+    // Initialize the hull as needed
+    return hull;
+}
+
 void InstantiateConvexHull(ConvexHull* hull, 
                            double* points_array, int num_points, 
                            int* simplices_array, int num_simplices,
                            int* neighbors_array, double* centroid_data,
                            int dimension) {
 
-    printf("pointer to centroid_data[0]: %p\n", &centroid_data);
+    // printf("pointer to centroid_data[0]: %p\n", &centroid_data);
 
-    printf("C code centroid_data: ");
-    for (int i = 3079679-1 + 100; i < 3079679+2 + 100; i++){
-        printf("%f\n", centroid_data[i]);
-    }
+    // printf("C code centroid_data: ");
+    // for (int i = 3079679-1 + 100; i < 3079679+2 + 100; i++){
+    //     printf("%f\n", centroid_data[i]);
+    // }
 
     // Step 1: Initialize the points in the convex hull
     hull->points = (Point*)malloc(num_points * sizeof(Point));
@@ -254,10 +261,10 @@ int SixthDegreeSearch(ConvexHull* hull, int candidate, Point* dummy_point) {
 
 
 // Function to find the index of the nearest simplex to a given point
-void FindNearestSimplexBruteForce(ConvexHull* hull, Point* p) {
+int FindNearestSimplexBruteForce(ConvexHull* hull, Point* p) {
     if (hull == NULL || p == NULL) {
         printf("ConvexHull or Point is NULL\n");
-        return;
+        return 0;
     }
 
     double minDistance = DBL_MAX;
@@ -277,6 +284,8 @@ void FindNearestSimplexBruteForce(ConvexHull* hull, Point* p) {
     } else {
         printf("No nearest simplex found\n");
     }
+
+    return nearestSimplexIndex;
 }
 
 // FindNearestSimplexDirected:
@@ -290,7 +299,7 @@ void FindNearestSimplexBruteForce(ConvexHull* hull, Point* p) {
 //      7. if minimum distance is the same as the new guess, return guess idx
 //      8. repeat loop until a guess is a minimum amongst its neighbors
 
-void FindNearestSimplexDirected(ConvexHull* hull, int guess, Point* p) {
+int FindNearestSimplexDirected(ConvexHull* hull, int guess, Point* p) {
 
     int current_guess = guess;
     double min_distance;
@@ -344,7 +353,9 @@ void FindNearestSimplexDirected(ConvexHull* hull, int guess, Point* p) {
         }
     }
 
-    printf("Nearest Simplex Index: %d\n", nearest_simplex);
-    printf("new_min_distance: %f\n", min_distance);
+    printf("C nearest simpliex: %d\n", nearest_simplex);
+    printf("C min distance: %f\n", min_distance);
+
+    return nearest_simplex;
 
 }
