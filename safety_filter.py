@@ -1117,7 +1117,7 @@ def run_nav_mj_many2(
 
     datasets = []
     for xy in xy_values:
-        v = 2.25 # directly towards the cylinder
+        v = 0 # 2.25 # directly towards the cylinder
         xr = 1
         yr = 1
         x = xy

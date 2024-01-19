@@ -636,8 +636,8 @@ def run_nav_mj_many(
     @time_function
     def nearest_halfspace(obs, ss=ss):
         obs_np = ptu.to_numpy(obs[:,:6])
-        equation_cvx = ss.is_in_cvx_hull(obs_np)
-        equation_cvx_ctrl = ss.is_in_cvx_hull_control(obs_np)
+        # equation_cvx = ss.is_in_cvx_hull(obs_np)
+        equation_cvx = ss.is_in_cvx_hull_control(obs_np)
         # in_cvx_hull = equation_cvx_ctrl[:-1] @ obs_np.flatten() + equation_cvx_ctrl[-1] <= 0
         # print(f"in_cvx_hull_ctrl: {in_cvx_hull}")
         

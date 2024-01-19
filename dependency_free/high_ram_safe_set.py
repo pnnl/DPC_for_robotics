@@ -257,6 +257,46 @@ class SafeSet:
     #     equation = self.cvx_hull.equations[closest_simplex]
     #     return equation
 
+    def is_in_cvx_hull_control(self, point):
+        centroids = np.mean(self.cvx_hull.points[self.cvx_hull.simplices], axis=1)   
+        distances = np.linalg.norm(centroids - point, axis=1)
+        closest_simplex = np.argmin(distances)
+        print(f"Python nearest simplex: {closest_simplex}")
+        print(f"Python min distance: {distances[closest_simplex]}")
+        equation = self.cvx_hull.equations[closest_simplex]
+        print(f"In cvx hull: {equation[:-1] @ point.T + equation[-1] <= 0}")
+        cvx_hyperplane_distances = self.cvx_del.plane_distance(point)
+        satisfy_delaunay = cvx_hyperplane_distances.max() >= 0 and cvx_hyperplane_distances.min() <= 0 # .find_simplex(x) >= 0 
+        print(f"In Delaunay hull: {satisfy_delaunay}")
+        return equation
+            
+            
+    # def is_in_non_cvx_hull(self, point):
+    #     x = np.hstack(posVel2cyl.numpy_vectorized(point, self.cylinder_position, self.cylinder_radius)).flatten()
+    #     distances = np.linalg.norm(self.non_cvx_hull.points - x, axis=1)
+    #     closest_point_index = np.argmin(distances)
+    #     closest_point = self.non_cvx_hull.points[closest_point_index]
+    #     simplex_centroids = np.mean(self.non_cvx_hull.points[self.non_cvx_hull.simplices], axis=1)   
+    #     distances_to_closest_point = np.linalg.norm(simplex_centroids - closest_point, axis=1)
+    #     closest_simplex_index = np.argmin(distances_to_closest_point)
+    #     # Form the tangential hyperplane
+    #     normal_vector = self.non_cvx_hull.equations[closest_simplex_index][:self.non_cvx_hull.ndim]  # Normal part of the equation
+    #     equation = self.non_cvx_hull.equations[closest_simplex_index]
+    #     normal_vector = equation[:-1]  # A, B, C, D, E, F
+    #     constant_term = equation[-1]  # G
+    #     # result = np.dot(normal_vector, x) + constant_term # return result <= 0  # Inside or on the simplex if true
+    #     return equation
+
+    def is_in_non_cvx_hull(self, point):
+        point = np.hstack(posVel2cyl.numpy_vectorized(point, self.cylinder_position, self.cylinder_radius)).flatten()
+        point[0] -= self.cylinder_margin # add margin term to shift safe set
+        centroids = np.mean(self.non_cvx_hull.points[self.non_cvx_hull.simplices], axis=1)
+        distances = np.linalg.norm(centroids - point, axis=1)
+        closest_simplex = np.argmin(distances)
+        equation = self.non_cvx_hull.equations[closest_simplex]
+        return equation
+
+
     def preprocess_data(self, data, num_points_considered):
 
         # extract all states, inputs, losses from data
@@ -320,7 +360,14 @@ if __name__ == "__main__":
     ss = SafeSet(data, generate_delaunay=False)
     from tqdm import tqdm
 
-    point = np.array([[-2., 0, 2, 0, 0, 0]])
+    # point = np.array([[-1., 0, 1.0, 0, 0, 0]]) fail
+    # point = np.array([[3., 0, -1., 0, 0, 0]]) pass
+    # point = np.array([[-2., 0, 2., 0, 0, 0]]) pass
+    point = np.array([[-0.9, 0, 0.9, 0, 0, 0]])
+    eqn = ss.is_in_cvx_hull_control(point)
+    point_in_cvx_hull = eqn[:-1] @ point.T + eqn[-1] <= 0
+    print(f"point in cvx hull: {point_in_cvx_hull}")
+    assert point_in_cvx_hull == False
 
     random_guesses = np.random.randint(0, ss.cvx_hull.simplices.shape[0], 100)    
     for simplex_guess in random_guesses:
@@ -337,6 +384,9 @@ if __name__ == "__main__":
 
         print(f"directed search nearest simplex: {directed_search_simplex}")
         print(f"directed search min distance: {distances[directed_search_simplex]}")
+
+        if distances[directed_search_simplex] == distances.min():
+            continue
 
         directed_search_vertex_neighbors = find_vertex_neighbors(simplices, directed_search_simplex)
         directed_search_vertex_neighbors_min_distance = find_min_distance_to_point(points, simplices, point, directed_search_vertex_neighbors)
