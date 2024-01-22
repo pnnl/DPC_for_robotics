@@ -20,6 +20,7 @@ setup(name='dpc_for_robotics',
         'mujoco',       # for the uncertain black-box simulation, not really necessary
         'tqdm',         # just for pretty loops in a couple places
         'imageio',      # just for DPC callback animations
+        'osqp',         # for testing purposes on convex hull operations - can probably be removed later.
     ],
     packages=find_packages(
         include=[

@@ -1,9 +1,39 @@
-import casadi as ca
 import numpy as np
 import torch
-from scipy.spatial import ConvexHull
+from scipy.spatial import ConvexHull as SPConvexHull
+from scipy.spatial import Delaunay as SPDelaunay
 
-def preprocess_data(data, num_points_considered, cylinder_radius):
+class posVel2cyl:
+   
+    @staticmethod
+    def numpy_vectorized(state, cyl, radius):
+        x = state[:, 0:1]
+        y = state[:, 2:3]
+        xc = cyl[:, 0:1]
+        yc = cyl[:, 1:2]
+
+        dx = x - xc
+        dy = y - yc
+
+        # Calculate the Euclidean distance from each point to the center of the cylinder
+        distance_to_center = (dx**2 + dy**2) ** 0.5
+        
+        # Subtract the radius to get the distance to the cylinder surface
+        distance_to_cylinder = distance_to_center - radius
+
+        xdot = state[:, 1:2]
+        ydot = state[:, 3:4]
+
+        # Normalize the direction vector (from the point to the center of the cylinder)
+        dx_normalized = dx / (distance_to_center + 1e-10)  # Adding a small number to prevent division by zero
+        dy_normalized = dy / (distance_to_center + 1e-10)
+
+        # Compute the dot product of the normalized direction vector with the velocity vector
+        velocity_to_cylinder = dx_normalized * xdot + dy_normalized * ydot
+
+        return distance_to_cylinder, velocity_to_cylinder
+
+def preprocess_data(data, num_points_considered, cylinder_radius, cylinder_position):
     # extract all states, inputs, losses from data
     x = torch.stack(data['x'])
     u = torch.stack(data['u'])
@@ -53,52 +83,57 @@ def preprocess_data(data, num_points_considered, cylinder_radius):
     # Select the points using the random indices
     cvx_safe_points = all_safe_points[random_indices, :]
 
-    return cvx_safe_points
+    # transform these safe points into non-cvx space
+    cylinder_positions = np.vstack([cylinder_position]*cvx_safe_points.shape[0])
+    non_cvx_safe_points = np.hstack(posVel2cyl.numpy_vectorized(cvx_safe_points, cylinder_positions, cylinder_radius))
 
-def find_closest_point_and_gradient(hull_vertices, external_point):
-    # Number of vertices and dimension
-    num_vertices = hull_vertices.shape[0]
-    dim = hull_vertices.shape[1]
+    return cvx_safe_points, non_cvx_safe_points
 
-    # Define the optimization variables (coefficients of the convex combination)
-    coeffs = ca.MX.sym('coeffs', num_vertices)
+class SafeSet:
+    def __init__(self, data, generate_delaunay=False) -> None:
+        self.cylinder_radius = 0.5
+        self.cylinder_position = np.array([[1.,1.]])
+        self.cylinder_margin = 0.15
+        num_points_considered = 100_000
+        self.simplex_guess = 1 # for the initial guess before warm starting of the directed search
 
-    # The point x inside the hull as a convex combination of the vertices
-    x = ca.mtimes(coeffs, hull_vertices)
+        print(f"----------------------------------------------------------------------------------")
+        print(f"generating safe set from DPC training dataset using {num_points_considered} points")
+        print(f"----------------------------------------------------------------------------------")
 
-    # Objective: Minimize the squared Euclidean distance between x and the external point
-    objective = ca.sumsqr(x - external_point)
+        print('preprocessing data...')
+        cvx_safe_points, non_cvx_safe_points = preprocess_data(data, num_points_considered, self.cylinder_radius, self.cylinder_position)
+        safe_points = [cvx_safe_points, non_cvx_safe_points]
 
-    # Constraints: Coefficients must be non-negative and sum to 1
-    constraints = [coeffs >= 0, ca.sum1(coeffs) == 1]
+        print('generating scipy convex hulls...')
+        sphulls = [SPConvexHull(p) for p in safe_points]
 
-    # Formulate the optimization problem
-    nlp = {'x': coeffs, 'f': objective, 'g': ca.vertcat(*constraints)}
-    solver = ca.nlpsol('solver', 'ipopt', nlp)
+        self.cvx_hull = sphulls[0]
+        self.non_cvx_hull = sphulls[1]
 
-    # Solve the problem
-    solution = solver(lbg=[0, 1], ubg=[np.inf, 1])
-    optimal_coeffs = solution['x']
+        if generate_delaunay is True:
+            print(f'OPTIONAL generating scipy delaunay triangulations...')
+            self.cvx_del = SPDelaunay(cvx_safe_points[self.cvx_hull.vertices])
 
-    # The closest point in the hull
-    closest_point = np.dot(optimal_coeffs, hull_vertices)
+    def nearest_face(self, point):
 
-    # Compute the gradient at the closest point
-    gradient = ca.gradient(objective, coeffs)
-    gradient_at_closest = ca.Function('grad', [coeffs], [gradient])(optimal_coeffs)
+        face = self.cvx_hull.points[self.cvx_hull.simplices[0]]
+        normal = self.cvx_hull.equations[0][:-1]
+        offset = self.cvx_hull.equations[0][-1]
 
-    return closest_point.full().flatten(), gradient_at_closest.full().flatten()
+        def project_point_onto_plane(point, normal, offset):
+            # Calculate the dot product of the point and the normal vector
+            dot_product = np.dot(point, normal)
+            # Calculate the projection of the point onto the plane
+            projection = point - (dot_product + offset) / np.dot(normal, normal) * normal
+            return projection
 
-cvx_safe_points = preprocess_data(
-    data=torch.load('large_data/nav_training_data.pt'), 
-    num_points_considered=100_000, 
-    cylinder_radius=0.5
-)
+        test = project_point_onto_plane(point, normal, offset)
+        assert normal @ test + offset == 0
 
-# Example usage
-hull = ConvexHull(cvx_safe_points)  
-hull_vertices = hull.points[hull.vertices]  # The vertices of the convex hull
-external_point = np.array([-1.,0,1,0,0,0])  # The external point
-closest_point, gradient = find_closest_point_and_gradient(hull_vertices, external_point)
-
+        
+if __name__ == "__main__":
+    ss = SafeSet(torch.load('large_data/nav_training_data.pt'), generate_delaunay=False)
+    point = np.array([-1.,0,1,0,0,0])
+    ss.nearest_face(point)
 
