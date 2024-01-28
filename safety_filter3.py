@@ -16,32 +16,24 @@ import reference
 from utils.quad import Animator, plot_mujoco_trajectories_wp_p2p, \
         calculate_mpc_cost
 from barrier_function import BarrierFunction
-from safe_set import SafeSet
+from safe_set2 import SafeSet
 import scipy as sp
+from utils.geometry import find_closest_simplex_equation
 
 
 class SafetyFilter:
 
     """
-    The time-invariant variable-timestep robust predictive safety filter
-    implementation
+    The time-invariant variable-timestep robust predictive safety filter implementation
     """
 
-    def __init__(
-            self,
-            dynamics,
-            Ts,
-            Tf_hzn,
-            N,
-            quad_params,
-            integrator
-            ):
-        """
+    def __init__(self, dynamics, Ts, Tf_hzn, N, quad_params, integrator):
+
+        """ 
         dynamics    - the quad dynamics themselves in casadi
         Ts          - timestep
         Tf_hzn      - the predictive horizon final time
-        N           - the number of steps in the predictive horizon (variable
-                      in length according to generate_variable_timesteps)
+        N           - the number of steps in the predictive horizon (variable in length according to generate_variable_timesteps)
         quad_params - the literal quad parameters
         """
 
@@ -54,33 +46,33 @@ class SafetyFilter:
         self.nx = 17
         self.nu = 4
         self.nvc = 2
-        delta = 0.00005     # Small robustness margin for constraint tightening
+        delta = 0.00005 # Small robustness margin for constraint tightening
         alpha = 1000000.0
-        alpha2 = 1.0        # Multiplication factor for feasibility parameters
+        alpha2 = 1.0 # Multiplication factor for feasibility parameters
         Lh_x, Ld, Lf_x, Lhf_x = 0, 0, 0, 0
         self.cylinder_margin = 0.15
         self.cylinder_radius = 0.5
-        self.cylinder_position = np.array([[1., 1.]])
-        self.eps_cvx = 1e-08
-        self.eps_non_cvx = 1e-08
+        self.cylinder_position = np.array([[1.,1.]])
+        # self.bf = BarrierFunction(torch.load('large_data/nav_training_data.pt'))
 
         # Define Box Constraints
         # -------------------------
         state_constraints = {}
         input_constraints = {}
 
-        umax = [quad_params["maxCmd"]*1]  # Input constraint parameters(max)
-        umin = [quad_params["minCmd"]*1]  # Input constraint parameters (min)
+        umax = [quad_params["maxCmd"]*1] # *100  #model.umax*np.ones((nu,1)) # Input constraint parameters(max)
+        umin = [quad_params["minCmd"]*1] # *100 #model.umin*np.ones((nu,1)) # Input constraint parameters (min)
 
-        scu_k = quad_params["state_ub"]
+        scu_k = quad_params["state_ub"] 
         scl_k = quad_params["state_lb"]
         scu_k[0:13] *= 100
         scl_k[0:13] *= 100
+        
         state_constraints[0] = lambda x, k: x - scu_k
         state_constraints[1] = lambda x, k: scl_k - x
 
         # cylinder parameters
-        x_c, y_c, r = 1.0, 1.0, 0.50  # 0.51
+        x_c, y_c, r = 1.0, 1.0, 0.50 # 0.51
 
         # Input constraints: h(u) <= 0
         kk = 0
@@ -88,10 +80,10 @@ class SafetyFilter:
             input_constraints[kk] = lambda u: u[ii] - umax[0]
             kk += 1
             input_constraints[kk] = lambda u: umin[0] - u[ii]
-            kk += 1
+            kk += 1   
 
-        self.nc = len(state_constraints)    # number of state constraints
-        self.ncu = len(input_constraints)   # number of input constraints
+        self.nc = len(state_constraints) # number of state constraints
+        self.ncu = len(input_constraints) # number of input constraints
 
         # Define CasADi optimisation objects
         # ----------------------------------
@@ -99,37 +91,27 @@ class SafetyFilter:
         self.opti = ca.Opti()
 
         # State, slack, input variables for  feasibility problem
-        self.X0_f = self.opti_feas.parameter(self.nx, 1)
-        self.X_f = self.opti_feas.variable(self.nx, N + 1)
-        # hyperplane constraint
-        self.Xi_f = self.opti_feas.variable(self.nc + self.nvc, N)
-        self.XiN_f = self.opti_feas.variable()
-        self.U_f = self.opti_feas.variable(self.nu, N)
-        # normal vector for hyperplane constraints
-        self.a1_f = self.opti_feas.parameter(6, 1)
-        # offset for hyperplane constraints
-        self.b1_f = self.opti_feas.parameter(6, 1)
-        # normal vector for hyperplane constraints
-        self.a2_f = self.opti_feas.parameter(2, 1)
-        # offset for hyperplane constraints
-        self.b2_f = self.opti_feas.parameter(2, 1)
+        self.X0_f   = self.opti_feas.parameter(self.nx, 1)
+        self.X_f    = self.opti_feas.variable(self.nx, N + 1)
+        self.Xi_f   = self.opti_feas.variable(self.nc + self.nvc, N) # nc + 1 for hyperplane constraint
+        self.XiN_f  = self.opti_feas.variable()
+        self.U_f    = self.opti_feas.variable(self.nu, N)
+        self.a1_f    = self.opti_feas.parameter(6, 1)    # normal vector for hyperplane constraints
+        self.b1_f    = self.opti_feas.parameter(6, 1)    # offset for hyperplane constraints
+        self.a2_f    = self.opti_feas.parameter(2, 1)    # normal vector for hyperplane constraints
+        self.b2_f    = self.opti_feas.parameter(2, 1)    # offset for hyperplane constraints
 
         # State, input variables for safety filter
-        self.X0 = self.opti.parameter(self.nx, 1)
-        self.X = self.opti.variable(self.nx, N + 1)
-        self.U = self.opti.variable(self.nu, N)
-        # nc + 1 for hyperplane constraint
-        self.Xi = self.opti.parameter(self.nc + self.nvc, N)
-        self.XiN = self.opti.parameter()
-        self.Unom = self.opti.parameter(self.nu, 1)
-        # normal vector for hyperplane constraints
-        self.a1 = self.opti.parameter(6, 1)
-        # offset for hyperplane constraints
-        self.b1 = self.opti.parameter(6, 1)
-        # normal vector for hyperplane constraints
-        self.a2 = self.opti.parameter(2, 1)
-        # offset for hyperplane constraints
-        self.b2 = self.opti.parameter(2, 1)
+        self.X0     = self.opti.parameter(self.nx, 1)
+        self.X      = self.opti.variable(self.nx, N + 1)
+        self.U      = self.opti.variable(self.nu, N)
+        self.Xi     = self.opti.parameter(self.nc + self.nvc, N) # nc + 1 for hyperplane constraint
+        self.XiN    = self.opti.parameter()
+        self.Unom   = self.opti.parameter(self.nu, 1)
+        self.a1      = self.opti.parameter(6, 1)         # normal vector for hyperplane constraints
+        self.b1      = self.opti.parameter(6, 1)         # offset for hyperplane constraints
+        self.a2      = self.opti.parameter(2, 1)         # normal vector for hyperplane constraints
+        self.b2      = self.opti.parameter(2, 1)         # offset for hyperplane constraints
 
         # Set up variables to warm start the optimization problems
         self.X_warm = np.zeros((self.nx, N+1))
@@ -148,13 +130,9 @@ class SafetyFilter:
 
         # dynamics constraints
         for k in range(self.N):
-            self.opti_feas.subject_to(self.X_f[:, k + 1] == self.integrator(
-                self.dynamics, self.X_f[:, k], self.U_f[:, k], dts[k],
-                quad_params))
-            self.opti.subject_to(self.X[:, k + 1] == self.integrator(
-                self.dynamics, self.X[:, k], self.U[:, k], dts[k],
-                quad_params))
-
+            self.opti_feas.subject_to(self.X_f[:, k + 1] == self.integrator(self.dynamics, self.X_f[:, k], self.U_f[:, k], dts[k], quad_params))
+            self.opti.subject_to(self.X[:, k + 1] == self.integrator(self.dynamics, self.X[:, k], self.U[:, k], dts[k], quad_params))
+        
         # Trajectory constraints,
         for ii in range(self.nx):
             # initial condition constraint
@@ -166,42 +144,29 @@ class SafetyFilter:
             for kk in range(0, self.N):
                 # compute robustness margin:
                 if kk > 0.0:
-                    rob_marg = kk * delta + Lh_x * Ld * \
-                        sum([Lf_x**j for j in range(kk)])
+                    rob_marg = kk * delta + Lh_x * Ld * sum([Lf_x**j for j in range(kk)])
                 else:
                     rob_marg = 0.0
-                self.opti_feas.subject_to(state_constraints[ii](
-                    self.X_f[:, kk], kk) <= self.Xi_f[ii, kk] - rob_marg)
-                self.opti.subject_to(state_constraints[ii](
-                    self.X[:, kk], kk) <= self.Xi[ii, kk] - rob_marg)
+                self.opti_feas.subject_to(state_constraints[ii](self.X_f[:, kk],kk) <= self.Xi_f[ii,kk] - rob_marg)
+                self.opti.subject_to(state_constraints[ii](self.X[:, kk],kk) <= self.Xi[ii,kk] - rob_marg)
 
         # Safe Set trajectory constraints, enforced at each time step
-        self.dpc_obs_to_pv = lambda obs: posVel2cyl.casadi(
-                obs, np.array([[x_c, y_c]]).T, r
-                )
+        self.dpc_obs_to_pv = lambda obs: posVel2cyl.casadi(obs, np.array([[x_c,y_c]]).T, r)
 
-        obs_idx = [0, 7, 1, 8, 2, 9]
         for ii in range(self.nvc):
             if ii == 0:
 
                 for kk in range(self.N):
                     if kk > 0.0:
-                        rob_marg = kk * delta + Lh_x * Ld * \
-                            sum([Lf_x**j for j in range(kk)])
+                        rob_marg = kk * delta + Lh_x * Ld * sum([Lf_x**j for j in range(kk)])
                     else:
                         rob_marg = 0.0
-                    obs_f = ca.vertcat(*[self.X_f[i, kk] for i in obs_idx])
-                    obs = ca.vertcat(*[self.X[i, kk] for i in obs_idx])
-                    self.opti_feas.subject_to(
-                            self.a1_f.T @ obs_f + self.b1_f
-                            <= 1.0 + self.Xi_f[self.nc + ii, kk] - rob_marg
-                            )
-                    self.opti.subject_to(
-                            self.a1.T @ obs + self.b1
-                            <= 1.0 + self.Xi[self.nc + ii, kk] - rob_marg
-                            )
+                    obs_f = ca.vertcat(*[self.X_f[i, kk] for i in [0,7,1,8,2,9]])
+                    obs = ca.vertcat(*[self.X[i, kk] for i in [0,7,1,8,2,9]])
+                    self.opti_feas.subject_to(self.a1_f.T @ obs_f + self.b1_f <= self.Xi_f[self.nc + ii, kk] - rob_marg)
+                    self.opti.subject_to(self.a1.T @ obs + self.b1 <= self.Xi[self.nc + ii, kk] - rob_marg)         
 
-            elif ii == 1:   # the pv constraints
+            elif ii == 1: # the pv constraints
                 for kk in range(self.N):
                     if kk > 0.0:
                         rob_marg = kk * delta + Lh_x * Ld * sum([Lf_x**j for j in range(kk)])
@@ -211,9 +176,22 @@ class SafetyFilter:
                     obs = self.dpc_obs_to_pv(ca.vertcat(*[self.X[i, kk] for i in [0,7,1,8,2,9]]))
                     obs_f[0] -= self.cylinder_margin
                     obs[0] -= self.cylinder_margin
-                    self.opti_feas.subject_to(self.a2_f.T @ obs_f + self.b2_f <= 1.0 + self.Xi_f[self.nc + ii, kk] - rob_marg)
-                    self.opti.subject_to(self.a2.T @ obs + self.b2 <= 1.0 + self.Xi[self.nc + ii, kk] - rob_marg)         
+                    self.opti_feas.subject_to(self.a2_f.T @ obs_f + self.b2_f <= self.Xi_f[self.nc + ii, kk] - rob_marg)
+                    self.opti.subject_to(self.a2.T @ obs + self.b2 <= self.Xi[self.nc + ii, kk] - rob_marg)         
 
+        # DPC training dataset safe set terminal constraint
+        # xr = np.copy(quad_params["default_init_state_np"])
+
+        # cbf_const = (np.sqrt(2) - 0.5) ** 2
+        # terminal constraint set
+        # xr = np.copy(quad_params["default_init_state_np"])
+        # xr[0], xr[1], xr[2] = 2, 2, 1 # x, y, z, (z is flipped)
+        # hf = lambda x: (x-xr).T @ (x-xr) - cbf_const
+
+        # Terminal constraint, enforced at last time step
+        # rob_marg_term = Lhf_x * Ld * Lf_x ** (self.N - 1)
+        # self.opti_feas.subject_to(hf(self.X_f[:, -1]) <= self.XiN_f - rob_marg_term)
+        # self.opti.subject_to(hf(self.X[:, -1]) <= self.XiN - rob_marg_term)
 
         # Input constraints
         for iii in range(self.ncu):
@@ -263,9 +241,9 @@ class SafetyFilter:
         obs_np = np.array(obs).flatten()
         pv_np = np.array(pv).flatten()
 
-        in_cvx_hull = equation_cvx[:-1] @ obs_np + equation_cvx[-1] <= 1.0 + self.eps_cvx
+        in_cvx_hull = equation_cvx[:-1] @ obs_np + equation_cvx[-1] <= 0
         print(f"in_cvx_hull: {in_cvx_hull}")
-        in_noncvx_hull = equation_noncvx[:-1] @ pv_np + equation_noncvx[-1] <= 1.0 + self.eps_non_cvx
+        in_noncvx_hull = equation_noncvx[:-1] @ pv_np + equation_noncvx[-1] <= 0
         print(f"in_noncvx_hull: {in_noncvx_hull}")
 
         if in_cvx_hull and in_noncvx_hull:
@@ -385,252 +363,6 @@ def get_nominal_control_system_nodes(quad_params, ctrl_params, Ts):
 
     return nominal_control_node_list
 
-def run_nav_no_event_trigger(
-        Ti, Tf, Ts,
-        N_sf, N_pred, Tf_hzn_sf, Tf_hzn_pred,
-        integrator = 'euler',
-        policy_save_path = 'data/',
-        media_save_path = 'data/training/',
-    ):
-
-    times = np.arange(Ti, Tf, Ts)
-    nsteps = len(times)
-    quad_params = get_quad_params()
-    ctrl_params = get_ctrl_params()
-    mlp_state_dict = torch.load(policy_save_path + 'nav_policy.pth')
-
-    safety_filter = SafetyFilter(state_dot.casadi_vectorized, Ts, Tf_hzn_sf, N_sf, quad_params, euler)
-    R = reference.waypoint('wp_p2p', average_vel=1.0)
-
-    node_list = get_nominal_control_system_nodes(quad_params, ctrl_params, Ts)
-
-    # filter = lambda x_seq, u_seq, violation: safety_filter(x_seq, u_seq, violation).unsqueeze(0)
-    def filter(x_seq, u_seq, violation):
-        u, x_planned = safety_filter(x_seq, u_seq, violation)
-        return u.unsqueeze(0), x_planned
-    filter_node = nm.system.Node(filter, input_keys=['X', 'U', 'Violation'], output_keys=['U_filtered', 'X_planned'], name='dynamics')
-    node_list.append(filter_node)
-
-    # sys = mujoco_quad(state=quad_params["default_init_state_np"], quad_params=quad_params, Ti=Ti, Tf=Tf, Ts=Ts, integrator=integrator)
-    sys = lambda x, u: x + state_dot.neuromancer(x, u, quad_params)*Ts
-    sys_node = nm.system.Node(sys, input_keys=['X', 'U_filtered'], output_keys=['X'], name='dynamics')
-    node_list.append(sys_node)
-
-    cl_system = nm.system.System(node_list, nsteps=nsteps)
-
-    # load the pretrained policies
-    cl_system.nodes[1].load_state_dict(mlp_state_dict)
-
-    X = ptu.from_numpy(quad_params["default_init_state_np"][None,:][None,:].astype(np.float32))
-    X[:,:,7] = 1.5 # xdot adversarial
-    X[:,:,8] = 1.5 # ydot adversarial
-
-    # X[:,:,0] = 0.45
-    # X[:,:,1] = 0.45
-    data = {
-        'X': X,
-        'R': torch.concatenate([ptu.from_numpy(R(1)[None,:][None,:].astype(np.float32))]*nsteps, axis=1),
-        'Cyl': torch.concatenate([ptu.tensor([[[1,1]]])]*nsteps, axis=1),
-        'Violation': ptu.tensor([[[False]]*nsteps])
-    }
-
-    # set the mujoco simulation to the correct initial conditions
-    # cl_system.nodes[5].callable.set_state(ptu.to_numpy(data['X'].squeeze().squeeze()))
-
-    # Perform CLP Simulation
-    output = cl_system.forward(data, retain_grad=False, print_loop=True)
-
-    # save
-    print("saving the state and input histories...")
-    x_history = np.stack(ptu.to_numpy(output['X'].squeeze()))
-    u_history = np.stack(ptu.to_numpy(output['U'].squeeze()))
-    r_history = np.stack(ptu.to_numpy(output['R'].squeeze()))
-
-    np.savez(
-        file = f"data/xu_sf_p2p_mj_{str(Ts)}.npz",
-        x_history = x_history,
-        u_history = u_history,
-        r_history = r_history
-    )
-
-    plot_mujoco_trajectories_wp_p2p([output], f'data/paper/dpcsf_adv_nav_{str(Ts)}.svg')
-
-    state_prediction = ptu.to_numpy(output['X_planned']).transpose(1, 0, 2)
-
-    animator = Animator(x_history, times, r_history, max_frames=500, save_path=media_save_path, state_prediction=state_prediction, drawCylinder=True)
-    animator.animate()
-
-    print('fin')
-
-def run_nav_mj_no_event_trigger(
-        Ti, Tf, Ts,
-        N_sf, N_pred, Tf_hzn_sf, Tf_hzn_pred,
-        integrator = 'euler',
-        policy_save_path = 'data/',
-        media_save_path = 'data/training/',
-    ):
-
-    times = np.arange(Ti, Tf, Ts)
-    nsteps = len(times)
-    quad_params = get_quad_params()
-    ctrl_params = get_ctrl_params()
-    mlp_state_dict = torch.load(policy_save_path + 'nav_policy.pth')
-
-    safety_filter = SafetyFilter(state_dot.casadi_vectorized, Ts, Tf_hzn_sf, N_sf, quad_params, euler)
-    R = reference.waypoint('wp_p2p', average_vel=1.0)
-
-    node_list = get_nominal_control_system_nodes(quad_params, ctrl_params, Ts)
-
-    # filter = lambda x_seq, u_seq, violation: safety_filter(x_seq, u_seq, violation).unsqueeze(0)
-    def filter(x_seq, u_seq, violation):
-        u, x_planned = safety_filter(x_seq, u_seq, violation)
-        return u.unsqueeze(0), x_planned
-    filter_node = nm.system.Node(filter, input_keys=['X', 'U', 'Violation'], output_keys=['U_filtered', 'X_planned'], name='dynamics')
-    node_list.append(filter_node)
-
-    sys = mujoco_quad(state=quad_params["default_init_state_np"], quad_params=quad_params, Ti=Ti, Tf=Tf, Ts=Ts, integrator=integrator)
-    sys_node = nm.system.Node(sys, input_keys=['X', 'U_filtered'], output_keys=['X'], name='dynamics')
-    node_list.append(sys_node)
-
-    cl_system = nm.system.System(node_list, nsteps=nsteps)
-
-    # load the pretrained policies
-    cl_system.nodes[1].load_state_dict(mlp_state_dict)
-
-    X = ptu.from_numpy(quad_params["default_init_state_np"][None,:][None,:].astype(np.float32))
-    X[:,:,7] = 1.6 # xdot adversarial
-    X[:,:,8] = 1.6 # ydot adversarial
-
-    # X[:,:,0] = 0.45
-    # X[:,:,1] = 0.45
-    data = {
-        'X': X,
-        'R': torch.concatenate([ptu.from_numpy(R(1)[None,:][None,:].astype(np.float32))]*nsteps, axis=1),
-        'Cyl': torch.concatenate([ptu.tensor([[[1,1]]])]*nsteps, axis=1),
-        'Violation': ptu.tensor([[[False]]*nsteps])
-    }
-
-    # set the mujoco simulation to the correct initial conditions
-    cl_system.nodes[5].callable.set_state(ptu.to_numpy(data['X'].squeeze().squeeze()))
-
-    # Perform CLP Simulation
-    output = cl_system.forward(data, retain_grad=False, print_loop=True)
-
-    # save
-    print("saving the state and input histories...")
-    x_history = np.stack(ptu.to_numpy(output['X'].squeeze()))
-    u_history = np.stack(ptu.to_numpy(output['U'].squeeze()))
-    r_history = np.stack(ptu.to_numpy(output['R'].squeeze()))
-
-    np.savez(
-        file = f"data/xu_sf_p2p_mj_{str(Ts)}.npz",
-        x_history = x_history,
-        u_history = u_history,
-        r_history = r_history
-    )
-
-    plot_mujoco_trajectories_wp_p2p([output], f'data/paper/dpcsf_adv_nav_{str(Ts)}.svg')
-
-    state_prediction = ptu.to_numpy(output['X_planned']).transpose(1, 0, 2)
-
-    animator = Animator(x_history, times, r_history, max_frames=500, save_path=media_save_path, state_prediction=state_prediction, drawCylinder=True, perspective='topdown')
-    animator.animate()
-
-    print('fin')
-
-def run_nav_mj(
-        Ti, Tf, Ts,
-        N_sf, N_pred, Tf_hzn_sf, Tf_hzn_pred,
-        integrator = 'euler',
-        policy_save_path = 'data/',
-        media_save_path = 'data/training/',
-    ):
-
-    times = np.arange(Ti, Tf, Ts)
-    nsteps = len(times)
-    quad_params = get_quad_params()
-    ctrl_params = get_ctrl_params()
-    mlp_state_dict = torch.load(policy_save_path + 'nav_policy.pth')
-
-    # safe set violation detection
-    log = torch.load('large_data/nav_training_data.pt')
-    bf = BarrierFunction(log)
-    safety_filter = SafetyFilter(state_dot.casadi_vectorized, Ts, Tf_hzn_sf, N_sf, quad_params, euler, bf=bf)
-    R = reference.waypoint('wp_p2p', average_vel=1.0)
-
-    node_list = get_nominal_control_system_nodes(quad_params, ctrl_params, Ts)
-
-    # in_safe_set = lambda x, bf=bf: ptu.tensor(bf(ptu.to_numpy(x.flatten()[0:6]))).unsqueeze(0).unsqueeze(0) == False
-    def in_safe_set(obs, bf=bf):
-        safe = ptu.tensor(bf(ptu.to_numpy(obs.flatten()[0:6]))).unsqueeze(0).unsqueeze(0)
-        violation = safe == False
-        if violation == True:
-            print('fin')
-        return violation
-    in_safe_set_node = nm.system.Node(in_safe_set, input_keys=['Obs_CylPV'], output_keys=['Violation'])
-    node_list.append(in_safe_set_node)
-
-    def filter(x_seq, u_seq, violation):
-        u, x_planned = safety_filter(x_seq, u_seq, violation)
-        return u.unsqueeze(0), x_planned
-    filter_node = nm.system.Node(filter, input_keys=['X', 'U', 'Violation'], output_keys=['U_filtered', 'X_planned'], name='dynamics')
-    node_list.append(filter_node)
-
-    sys = mujoco_quad(state=quad_params["default_init_state_np"], quad_params=quad_params, Ti=Ti, Tf=Tf, Ts=Ts, integrator=integrator)
-    sys_node = nm.system.Node(sys, input_keys=['X', 'U_filtered'], output_keys=['X'], name='dynamics')
-    node_list.append(sys_node)
-
-    cl_system = nm.system.System(node_list, nsteps=nsteps)
-
-    # load the pretrained policies
-    cl_system.nodes[1].load_state_dict(mlp_state_dict)
-
-    # X = ptu.from_numpy(quad_params["default_init_state_np"][None,:][None,:].astype(np.float32))
-    # X[:,:,7] = 1.6 # xdot adversarial
-    # X[:,:,8] = 1.6 # ydot adversarial
-
-    X = ptu.tensor([[[  1.       ,   -1.       ,  -0.       ,   1.       ,
-           0.       ,  -0.       ,   0.       ,   0,
-          2.25,  -0.       ,   0.       ,  -0.       ,
-           0.       , 522.98474  , 522.98474  , 522.98474  ,
-         522.98474  ]]])
-
-    # X[:,:,0] = 0.45
-    # X[:,:,1] = 0.45
-    data = {
-        'X': X,
-        'R': torch.concatenate([ptu.from_numpy(R(1)[None,:][None,:].astype(np.float32))]*nsteps, axis=1),
-        'Cyl': torch.concatenate([ptu.tensor([[[1,1]]])]*nsteps, axis=1),
-    }
-
-    # set the mujoco simulation to the correct initial conditions
-    cl_system.nodes[6].callable.set_state(ptu.to_numpy(data['X'].squeeze().squeeze()))
-
-    # Perform CLP Simulation
-    output = cl_system.forward(data, retain_grad=False, print_loop=True)
-
-    # save
-    print("saving the state and input histories...")
-    x_history = np.stack(ptu.to_numpy(output['X'].squeeze()))
-    u_history = np.stack(ptu.to_numpy(output['U'].squeeze()))
-    r_history = np.stack(ptu.to_numpy(output['R'].squeeze()))
-
-    np.savez(
-        file = f"data/xu_sf_p2p_mj_{str(Ts)}.npz",
-        x_history = x_history,
-        u_history = u_history,
-        r_history = r_history
-    )
-
-    plot_mujoco_trajectories_wp_p2p([output], f'data/paper/dpcsf_adv_nav_{str(Ts)}.svg')
-
-    state_prediction = ptu.to_numpy(output['X_planned']).transpose(1, 0, 2)
-
-    animator = Animator(x_history, times, r_history, max_frames=500, save_path=media_save_path, state_prediction=state_prediction, drawCylinder=True, perspective='topdown')
-    animator.animate()
-
-    print('fin')
-
 def run_nav_mj_many(
         Ti, Tf, Ts,
         N_sf, N_pred, Tf_hzn_sf, Tf_hzn_pred,
@@ -657,69 +389,13 @@ def run_nav_mj_many(
     # in_safe_set = lambda x, bf=bf: ptu.tensor(bf(ptu.to_numpy(x.flatten()[0:6]))).unsqueeze(0).unsqueeze(0) == False
     @time_function
     def nearest_halfspace(obs, ss=ss):
-        obs_np = ptu.to_numpy(obs[:,:6])
+        cvx_hull_point = ptu.to_numpy(obs[:,:6])
+        cvx_eqn = find_closest_simplex_equation(ss.cvx_hull, cvx_hull_point)
 
-        cvx_vertices = ss.cvx_hull.points[ss.cvx_hull.vertices]
-        cvx_dim = cvx_vertices.shape[1]
-        non_cvx_vertices = ss.non_cvx_hull.points[ss.non_cvx_hull.vertices]
-        non_cvx_dim = non_cvx_vertices.shape[1]
+        non_cvx_hull_point = np.hstack(posVel2cyl.numpy_vectorized(cvx_hull_point, np.array([[1.,1.]]), 0.5)).flatten() 
+        non_cvx_eqn = find_closest_simplex_equation(ss.non_cvx_hull, non_cvx_hull_point)
 
-        # delete later:
-        def get_equation_through_centroids(hull, point):
-            centroids = np.mean(hull.points[hull.simplices], axis=1)   
-            distances = np.linalg.norm(centroids - point, axis=1)
-            closest_simplex = np.argmin(distances)
-            print(f"Python nearest simplex: {closest_simplex}")
-            print(f"Python min distance: {distances[closest_simplex]}")
-            print(f"distances to vertices of closest simplex according to centroid: {np.linalg.norm(np.argsort(hull.points[hull.simplices[closest_simplex]])[:point.shape[1]] - point, axis=1)}")
-
-            equation = hull.equations[closest_simplex]
-            return equation
-        
-        centroid_eqn = get_equation_through_centroids(ss.cvx_hull, obs_np)
-
-        def get_equation_through_vertices(hull, point):
-
-            distances = np.linalg.norm(hull.points[hull.vertices] - point, axis=1)
-            argmins = np.argsort(distances)[:cvx_dim + 1]
-            A_cvx = np.hstack([hull.points[hull.vertices][argmins], np.ones([cvx_dim + 1, 1])])
-            equation = sp.linalg.null_space(A_cvx)
-            test_centroid = np.mean(hull.points[hull.vertices][argmins], axis=0)
-            print(f"distances to vertices of closest simplex according to vertices: {np.linalg.norm(np.argsort(hull.points[hull.vertices])[:point.shape[1]] - point, axis=1)}")
-            return equation
-
-        vertex_eqn = get_equation_through_vertices(ss.cvx_hull, obs_np)
-
-        # according to the distances calculated by
-        
-
-        pv = np.hstack(posVel2cyl.numpy_vectorized(obs_np, np.array([[1.,1.]]), 0.5)).flatten() 
-        distances = np.linalg.norm(non_cvx_vertices - pv, axis=1)
-        argmins = np.argsort(distances)[:non_cvx_dim + 1] 
-        A_non_cvx = np.hstack([non_cvx_vertices[argmins], np.ones([non_cvx_dim + 1, 1])]) 
-        b_non_cvx = np.ones([non_cvx_dim + 1, 1])
-        try:
-            equation_non_cvx = np.linalg.pinv(A_non_cvx) @ b_non_cvx
-        except:
-            print("singular matrix in non_cvx hull plane formation, resorting to pseudo inv")
-            equation_cvx = np.linalg.pinv(A_non_cvx) @ b_non_cvx
-
-
-        # testing the cvx hull
-        # test_point = np.array([[-5.8833e-01,  9.6962e-01, -2.2199e-01,  2.2073e-01,  6.1565e-01,
-        #   6.1536e-01,  4.3999e-01,  7.8767e-01, -5.6039e-02,  2.4920e-01,
-        #   1.1753e+01,  5.3056e+00,  1.0969e-01,  7.4996e+01,  7.4996e+01,
-        #   1.1797e+02,  7.4996e+01]])
-        
-        # svd = np.linalg.svd(A_cvx - np.mean(A_cvx, axis=0, keepdims=True))
-
-        
-        # test = test_point.flatten()[[0,7,1,8,2,9]]
-        
-        # print('fin')
-        ipdb.set_trace()
-        return ptu.from_numpy(equation_cvx.T), ptu.from_numpy(equation_non_cvx.T)
-        # return ptu.from_numpy(equation_cvx[None,:]), ptu.from_numpy(equation_non_cvx[None,:])
+        return ptu.from_numpy(cvx_eqn[None,:]), ptu.from_numpy(non_cvx_eqn[None,:])
 
     nearest_halfspace_node = nm.system.Node(nearest_halfspace, input_keys=['Obs_CylPV'], output_keys=['Halfspace_cvx', 'Halfpsace_noncvx'])
     node_list.append(nearest_halfspace_node)
@@ -816,8 +492,5 @@ if __name__ == "__main__":
     integrator = euler
 
     run_nav_mj_many(Ti, Tf, Ts, N_sf, N_pred, Tf_hzn_sf, Tf_hzn_pred, integrator)
-    # run_nav_mj(Ti, Tf, Ts, N_sf, N_pred, Tf_hzn_sf, Tf_hzn_pred, integrator)
-    # run_nav_mj_no_event_trigger(Ti, Tf, Ts, N_sf, N_pred, Tf_hzn_sf, Tf_hzn_pred, integrator)
-    # run_wp_p2p(Ti, Tf, Ts, N_sf, N_pred, Tf_hzn_sf, Tf_hzn_pred, integrator)
 
     print('fin')
