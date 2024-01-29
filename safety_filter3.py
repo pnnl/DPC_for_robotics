@@ -53,6 +53,8 @@ class SafetyFilter:
         self.cylinder_margin = 0.15
         self.cylinder_radius = 0.5
         self.cylinder_position = np.array([[1.,1.]])
+        self.cvx_margin = 0.0
+        self.non_cvx_margin = 0.0
         # self.bf = BarrierFunction(torch.load('large_data/nav_training_data.pt'))
 
         # Define Box Constraints
@@ -163,8 +165,8 @@ class SafetyFilter:
                         rob_marg = 0.0
                     obs_f = ca.vertcat(*[self.X_f[i, kk] for i in [0,7,1,8,2,9]])
                     obs = ca.vertcat(*[self.X[i, kk] for i in [0,7,1,8,2,9]])
-                    self.opti_feas.subject_to(self.a1_f.T @ obs_f + self.b1_f <= self.Xi_f[self.nc + ii, kk] - rob_marg)
-                    self.opti.subject_to(self.a1.T @ obs + self.b1 <= self.Xi[self.nc + ii, kk] - rob_marg)         
+                    self.opti_feas.subject_to(self.a1_f.T @ obs_f + self.b1_f <= self.Xi_f[self.nc + ii, kk] - rob_marg - self.cvx_margin)
+                    self.opti.subject_to(self.a1.T @ obs + self.b1 <= self.Xi[self.nc + ii, kk] - rob_marg - self.cvx_margin)
 
             elif ii == 1: # the pv constraints
                 for kk in range(self.N):
@@ -176,22 +178,8 @@ class SafetyFilter:
                     obs = self.dpc_obs_to_pv(ca.vertcat(*[self.X[i, kk] for i in [0,7,1,8,2,9]]))
                     obs_f[0] -= self.cylinder_margin
                     obs[0] -= self.cylinder_margin
-                    self.opti_feas.subject_to(self.a2_f.T @ obs_f + self.b2_f <= self.Xi_f[self.nc + ii, kk] - rob_marg)
-                    self.opti.subject_to(self.a2.T @ obs + self.b2 <= self.Xi[self.nc + ii, kk] - rob_marg)         
-
-        # DPC training dataset safe set terminal constraint
-        # xr = np.copy(quad_params["default_init_state_np"])
-
-        # cbf_const = (np.sqrt(2) - 0.5) ** 2
-        # terminal constraint set
-        # xr = np.copy(quad_params["default_init_state_np"])
-        # xr[0], xr[1], xr[2] = 2, 2, 1 # x, y, z, (z is flipped)
-        # hf = lambda x: (x-xr).T @ (x-xr) - cbf_const
-
-        # Terminal constraint, enforced at last time step
-        # rob_marg_term = Lhf_x * Ld * Lf_x ** (self.N - 1)
-        # self.opti_feas.subject_to(hf(self.X_f[:, -1]) <= self.XiN_f - rob_marg_term)
-        # self.opti.subject_to(hf(self.X[:, -1]) <= self.XiN - rob_marg_term)
+                    self.opti_feas.subject_to(self.a2_f.T @ obs_f + self.b2_f <= self.Xi_f[self.nc + ii, kk] - rob_marg - self.non_cvx_margin)
+                    self.opti.subject_to(self.a2.T @ obs + self.b2 <= self.Xi[self.nc + ii, kk] - rob_marg - self.non_cvx_margin)
 
         # Input constraints
         for iii in range(self.ncu):
@@ -391,9 +379,15 @@ def run_nav_mj_many(
     def nearest_halfspace(obs, ss=ss):
         cvx_hull_point = ptu.to_numpy(obs[:,:6])
         cvx_eqn = find_closest_simplex_equation(ss.cvx_hull, cvx_hull_point)
+        cvx_eqn = np.array([0.,0.,0.,0.,0.,0,-100]) # check to see if theres an interaction between the safe sets
 
         non_cvx_hull_point = np.hstack(posVel2cyl.numpy_vectorized(cvx_hull_point, np.array([[1.,1.]]), 0.5)).flatten() 
+        # offset point for safety margin:
+        # non_cvx_hull_point[0] -= 0.15 # 0.20
+
         non_cvx_eqn = find_closest_simplex_equation(ss.non_cvx_hull, non_cvx_hull_point)
+        if obs[0,-1] > 0: # we are in safe set if moving away from cylinder
+            non_cvx_eqn = np.array([0., 1., -100]) 
 
         return ptu.from_numpy(cvx_eqn[None,:]), ptu.from_numpy(non_cvx_eqn[None,:])
 
@@ -415,14 +409,14 @@ def run_nav_mj_many(
     # load the pretrained policies
     cl_system.nodes[1].load_state_dict(mlp_state_dict)
 
-    npoints = 5  # Number of points you want to generate in 2 dimensions ie. 5 == (5x5 grid)
+    npoints = 1  # Number of points you want to generate in 2 dimensions ie. 5 == (5x5 grid)
     xy_values = ptu.from_numpy(np.linspace(-1, 1, npoints))  # Generates 'npoints' values between -10 and 10 for x
     z_values = ptu.from_numpy(np.linspace(-1, 1, 1))
     z_values = [ptu.tensor(0.)]
 
     datasets = []
     for xy in xy_values:
-        v = 2.25 # directly towards the cylinder
+        v = 0. # directly towards the cylinder
         xr = 1
         yr = 1
         x = xy
@@ -476,6 +470,9 @@ def run_nav_mj_many(
 
     print('fin')
 
+def run_traj_mj():
+    pass
+
 if __name__ == "__main__":
 
     # example usage
@@ -485,7 +482,7 @@ if __name__ == "__main__":
     ptu.init_dtype()
     ptu.init_gpu(use_gpu=False)
 
-    Ti, Tf, Ts = 0.0, 10.0, 0.001
+    Ti, Tf, Ts = 0.0, 5.0, 0.001
     N_sf = 30
     N_pred = None
     Tf_hzn_sf, Tf_hzn_pred = 0.50, None # 0.75 works, is best that does
