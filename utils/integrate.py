@@ -28,36 +28,3 @@ def RK4(f, x, u, Ts, *args):
     k3 = f(x + Ts / 2 * k2, u, *args)
     k4 = f(x + Ts * k3, u, *args)
     return x + Ts / 6 * (k1 + 2 * k2 + 2 * k3 + k4)
-
-
-# class euler:
-#         
-#     @staticmethod
-#     def numpy(f, x, u, Ts, *args):
-#         # Standard Euler integration
-#         return x + Ts * f(x, u, *args)
-# 
-#     @staticmethod
-#     def pytorch(f, x, u, Ts, *args):
-#         # Standard Euler integration
-#         return x + Ts * f(x, u, *args)
-# 
-#     
-# class RK4:
-#         
-#     @staticmethod
-#     def numpy(f, x, u, Ts, *args):
-#         k1 = f(x, u, *args)
-#         k2 = f(x + Ts / 2 * k1, u, *args)
-#         k3 = f(x + Ts / 2 * k2, u, *args)
-#         k4 = f(x + Ts * k3, u, *args)
-#         return x + Ts / 6 * (k1 + 2 * k2 + 2 * k3 + k4)
-# 
-#     @staticmethod
-#     def pytorch(f, x, u, Ts, *args):
-#         k1 = f(x, u, *args)
-#         k2 = f(x + Ts / 2 * k1, u, *args)
-#         k3 = f(x + Ts / 2 * k2, u, *args)
-#         k4 = f(x + Ts * k3, u, *args)
-#         return x + Ts / 6 * (k1 + 2 * k2 + 2 * k3 + k4)
-

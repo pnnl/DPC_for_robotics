@@ -5,7 +5,7 @@ license: MIT
 Please feel free to use and modify this, but keep the above information. Thanks!
 
 adaptations by: John Viljoen
-email.johnviljoen2@gmail.com
+email: johnviljoen2@gmail.com
 """
 
 from datetime import datetime
