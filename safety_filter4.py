@@ -150,13 +150,14 @@ class SafetyFilter:
         self.Ujac_func = ca.Function('df', [x_sym], [ca.jacobian(y_sym, x_sym)])
         # x = ca.DM([[0.], [2.], [0.], [4], [0.], [2.], [0.], [4]])
 
-        cost = 0.0 # 0.01 * ca.dot(self.Unom - self.U[:,0], self.Unom - self.U[:,0])
-        for i in range(N): # ca.dot(self.dpc(Y[:,i]) - self.U[:,i], self.dpc(Y[:,i]) - self.U[:,i]) \
+        cost = 0.0
+        for i in range(N):
             U_i_taylor = self.Unom + self.Ujac @ (Y[:,i] - Y[:,0])
             cost += 0.01 * ca.dot(U_i_taylor - self.U[:,i], U_i_taylor - self.U[:,i]) \
-                    + 10 * ReLU(pv[:,i].T @ self.w2 + self.b2 + m2) \
-                    + 1.0 * ReLU(self.X[:,i].T @ self.w1 + self.b1 + m1) \
-
+                    + 20 * ReLU(pv[:,i].T @ self.w2 + self.b2 + m2) \
+                    + 1.5 * ReLU(self.X[:,i].T @ self.w1 + self.b1 + m1) 
+        # 0.005, 10, 1 works
+        # 0.01, 20, 1.5 best
         self.opti.minimize(cost)
 
         self.opti.set_initial(self.X, self.X_warm)
@@ -385,7 +386,7 @@ if __name__ == "__main__":
 
     safety_filter(x, x, eqn1, eqn2)
 
-    Ti, Tf, Ts = 0., 10.0, 0.001
+    Ti, Tf, Ts = 0., 5.0, 0.001
     run(Ti, Tf, Ts)
 
 
