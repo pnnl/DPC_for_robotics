@@ -35,6 +35,10 @@ def find_closest_simplex_equation(
     A = np.pad(nearest_vertices, ((0, 0), (0, 1)), constant_values=1) # pad with ones and zeros to account for constant offset
     A = np.pad(A, ((0, 1), (0, 0)), constant_values=0) # pad with ones and zeros to account for constant offset
     eqn = sp.linalg.null_space(A).flatten() # needs to be a 1D nullspace!
+    
+    # lets normalise the normal section of the equation for easy distance calculation
+    eqn[:-1] = eqn[:-1]/np.linalg.norm(eqn[:-1], ord=2)
+
     # need to ensure the equation normal is facing the right way. use the angle between centroid -> random vertex and normal >90 constraint
     # and if it fails check, just flip it. eqn *= -1. We also only want to consider a vertex we havent yet looked at to avoid eroneous 
     # results, lets use the furthest vertex from our point to keep things simple argmins[-1]

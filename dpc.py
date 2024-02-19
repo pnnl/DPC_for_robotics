@@ -372,7 +372,7 @@ class Dynamics(ode.ODESystem):
         # x = xu[:,0:6]
         # u = xu[:,6:9]
         # add noise if required
-        x = x + torch.randn(x.shape, device=ptu.device) * self.x_std
+        x = x # + torch.randn(x.shape, device=ptu.device) * self.x_std
         return self.f(x,u)
 
 # def posVel2cyl(state, cyl, radius):
@@ -467,6 +467,34 @@ class posVel2cyl:
         velocity_to_cylinder = dx_normalized * xdot + dy_normalized * ydot
 
         return distance_to_cylinder, velocity_to_cylinder
+    
+    @staticmethod
+    def numpy(state, cyl, radius):
+        x = state[0:1]
+        y = state[2:3]
+        xc = cyl[0:1]
+        yc = cyl[1:2]
+
+        dx = x - xc
+        dy = y - yc
+
+        # Calculate the Euclidean distance from each point to the center of the cylinder
+        distance_to_center = (dx**2 + dy**2) ** 0.5
+        
+        # Subtract the radius to get the distance to the cylinder surface
+        distance_to_cylinder = distance_to_center - radius
+
+        xdot = state[1:2]
+        ydot = state[3:4]
+
+        # Normalize the direction vector (from the point to the center of the cylinder)
+        dx_normalized = dx / (distance_to_center + 1e-10)  # Adding a small number to prevent division by zero
+        dy_normalized = dy / (distance_to_center + 1e-10)
+
+        # Compute the dot product of the normalized direction vector with the velocity vector
+        velocity_to_cylinder = dx_normalized * xdot + dy_normalized * ydot
+
+        return np.vstack([distance_to_cylinder, velocity_to_cylinder])
     
 
 

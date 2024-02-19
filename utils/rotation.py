@@ -657,6 +657,31 @@ class quaternion_to_dcm:
         dcm[:,2,2] = q[:,0]**2 - q[:,1]**2 - q[:,2]**2 + q[:,3]**2
 
         return dcm
+    
+    @staticmethod
+    def casadi(q):
+
+        row1 = ca.horzcat(
+            q[0,0]**2 + q[0,1]**2 - q[0,2]**2 - q[0,3]**2,
+            2.0*(q[0,1]*q[0,2] - q[0,0]*q[0,3]),
+            2.0*(q[0,1]*q[0,3] + q[0,0]*q[0,2])
+        )
+
+        row2 = ca.horzcat(
+            2.0*(q[0,1]*q[0,2] + q[0,0]*q[0,3]),
+            q[0,0]**2 - q[0,1]**2 + q[0,2]**2 - q[0,3]**2,
+            2.0*(q[0,2]*q[0,3] - q[0,0]*q[0,1]) 
+        )
+
+        row3 = ca.horzcat(
+            2.0*(q[0,1]*q[0,3] - q[0,0]*q[0,2]),
+            2.0*(q[0,2]*q[0,3] + q[0,0]*q[0,1]),
+            q[0,0]**2 - q[0,1]**2 - q[0,2]**2 + q[0,3]**2
+        )
+
+        dcm = ca.vertcat(row1, row2, row3)
+
+        return dcm
 
 class quaternion_inverse:
 
@@ -702,6 +727,10 @@ class normalize_vector:
     def pytorch_vectorized(q: torch.Tensor, norm_dim=1) -> torch.Tensor:
         normalised_vecs = torch.linalg.norm(q, dim=norm_dim).unsqueeze(1)
         return q/normalised_vecs
+    
+    @staticmethod
+    def casadi(q):
+        return q / ca.norm_2(q)
 
 class quaternion_derivative_to_angular_velocity:
     """

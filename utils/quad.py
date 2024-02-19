@@ -71,7 +71,7 @@ class applyMixerFM:
     def casadi(params, thr, moment):
         t = ca.vertcat(thr, moment[:,0], moment[:,1], moment[:,2])
 
-        mixer = ca.DM(ptu.to_numpy(params["mixerFMinv"]))
+        mixer = ca.DM(params["mixerFMinv"])
         # Perform matrix multiplication
         w_cmd_sq = ca.mtimes(mixer, t)
 
