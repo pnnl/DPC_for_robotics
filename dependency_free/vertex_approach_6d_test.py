@@ -3,7 +3,7 @@ import scipy as sp
 import torch
 import matplotlib.pyplot as plt
 
-from safe_set import SafeSet
+from redundant.safe_set import SafeSet
 
 log = torch.load('large_data/nav_training_data.pt')
 ss = SafeSet(log)

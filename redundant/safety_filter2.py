@@ -18,7 +18,7 @@ import reference
 from utils.quad import Animator
 from utils.quad import Animator, plot_mujoco_trajectories_wp_p2p, calculate_mpc_cost, plot_mujoco_trajectories_wp_traj
 from barrier_function import BarrierFunction
-from safe_set import SafeSet
+from redundant.safe_set import SafeSet
 from scipy.spatial import distance
 
 class SafetyFilter:

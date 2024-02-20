@@ -810,6 +810,7 @@ def train_wp_traj(    # recommendations:
 
     callback.animate()
     callback.delete_all_but_last_image()
+    log = callback.save_data()
 
     # Save the Policy
     # ---------------
@@ -1690,7 +1691,7 @@ if __name__ == "__main__":
     # train_lyap_nav(iterations=2, epochs=10, batch_size=5000, minibatch_size=10, nstep=100, lr=0.05, Ts=0.1, save=True)
     # run_adv_nav_mj(0, 10.0, 0.001)
     # run_wp_p2p_hl(0, 5, 0.001)
-    run_wp_p2p_mj(0, 5.0, 0.001)
+    # run_wp_p2p_mj(0, 5.0, 0.001)
     # run_wp_traj_mj(0, 20.0, 0.001, save=True)
     # run_fig8_mj(0.0, 10.0, 0.001)
 

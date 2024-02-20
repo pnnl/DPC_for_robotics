@@ -16,7 +16,7 @@ import reference
 from utils.quad import Animator, plot_mujoco_trajectories_wp_p2p, \
         calculate_mpc_cost
 from barrier_function import BarrierFunction
-from safe_set2 import SafeSet
+from safe_set import SafeSet
 import scipy as sp
 from utils.geometry import find_closest_simplex_equation
 

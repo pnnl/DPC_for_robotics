@@ -20,7 +20,7 @@ import torch
 import matplotlib.pyplot as plt
 
 from utils.time import time_function
-from safe_set2 import SafeSet
+from safe_set import SafeSet
 
 log = torch.load('large_data/nav_training_data.pt')
 ss = SafeSet(log)

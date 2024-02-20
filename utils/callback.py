@@ -375,6 +375,7 @@ class LinTrajCallback(Callback):
         self.nstep = nstep
         self.nx = nx
         self.Ts = Ts
+        self.log = {'x': [], 'u': [], 'r': [], 'loss': []}
 
     def begin_eval(self, trainer, output):
 
@@ -437,6 +438,23 @@ class LinTrajCallback(Callback):
         # Delete all but the last one
         for file in sorted_files[:-1]:  # Exclude the last file
             os.remove(os.path.join(self.directory, file))
+
+    def end_batch(self, trainer, output):
+        """
+        This method is called after every minibatch, this is where we will record our dataset
+        points
+        """
+        self.log['x'].append(output['train_X'].detach())
+        self.log['u'].append(output['train_U'].detach())
+        self.log['r'].append(output['train_R'].detach())
+        self.log['loss'].append(output['train_loss'].detach())
+
+    def save_data(self):
+
+        print('saving training dataset rollouts to large_data/...')
+        torch.save(self.log, 'large_data/traj_training_data.pt')
+
+        return self.log
 
 class WP_Callback(Callback):
     def __init__(self, save_dir, media_path, nstep, nx):
@@ -566,7 +584,7 @@ class Attitude_Callback(Callback):
         # Delete all but the last one
         for file in sorted_files[:-1]:  # Exclude the last file
             os.remove(os.path.join(self.directory, file))
-
+    
 
 class Lyap_WP_Callback(Callback):
     def __init__(self, save_dir, media_path, nstep, nx):
