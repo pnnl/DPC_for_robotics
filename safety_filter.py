@@ -629,8 +629,7 @@ def run_traj(Ti, Tf, Ts):
 
     print("Average MPC Cost: {:.2f}".format(average_cost))
 
-
-    animator = Animator(x_history, times, r_histories[0], max_frames=500, save_path=media_save_path, state_prediction=None, drawCylinder=False)
+    animator = Animator(x_history, times, r_histories[0], max_frames=500, save_path='data', state_prediction=None, drawCylinder=False)
     animator.animate()
 
 if __name__ == "__main__":
