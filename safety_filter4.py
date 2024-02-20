@@ -92,6 +92,9 @@ class SafetyFilter:
         m1 = 0.1
         m2 = 0.1
 
+        # margin offset for the cylidner constraint
+        self.delta = 0.1
+
         # Define Box Constraints
         # ----------------------
         umax = 100
@@ -140,6 +143,7 @@ class SafetyFilter:
 
         # function to go from true X to X that DPC expects
         Y, pv = self.X_to_DPC_input(self.X)
+        pv[0] -= self.delta
 
         # ReLU = lambda x: x # ca.fmax(x, 0)
         # ReLU = lambda x, alpha=0.1: ca.fmax(x, 0) + alpha * ca.fmin(x, 0) # leaky relu
@@ -197,6 +201,7 @@ class SafetyFilter:
         eqn2 = ptu.to_numpy(eqn2).flatten()
 
         pv = posVel2cyl.numpy(x, np.array([[1,1]]).T, 0.5)
+        pv[0] -= self.delta
 
         in_cvx_hull = eqn1[:-1] @ x + eqn1[-1] <= 0.2
         print(f"in_cvx_hull: {in_cvx_hull}")
@@ -206,10 +211,10 @@ class SafetyFilter:
         y = ca.DM(e)
         unom = self.dpc(y).full()
 
-        near_ball = np.linalg.norm(e[:6], ord=2) <= 0.5
-        print(f"near_ball: {near_ball}")
+        #near_ball = np.linalg.norm(e[:6], ord=2) <= 0.75
+        #print(f"near_ball: {near_ball}")
 
-        if (in_cvx_hull and in_noncvx_hull) or near_ball:
+        if (in_cvx_hull and in_noncvx_hull): #or near_ball:
 
             return ptu.from_numpy(unom[:,0]), ptu.from_numpy(self.X_warm)
         else:
@@ -277,7 +282,10 @@ def run(Ti, Tf, Ts):
 
     def nearest_halfspace(obs, ss=ss):
         cvx_hull_point = ptu.to_numpy(obs[:,:6])
+        # target is different to one in training, therefore shift up and down again after
+        cvx_hull_point[:,4] += 1
         cvx_eqn = find_closest_simplex_equation(ss.cvx_hull, cvx_hull_point)
+        cvx_eqn[-1] -= 1
         non_cvx_hull_point = np.hstack(posVel2cyl.numpy_vectorized(cvx_hull_point, np.array([[1.,1.]]), 0.5)).flatten() 
         non_cvx_eqn = find_closest_simplex_equation(ss.non_cvx_hull, non_cvx_hull_point)
         
@@ -386,7 +394,7 @@ if __name__ == "__main__":
 
     safety_filter(x, x, eqn1, eqn2)
 
-    Ti, Tf, Ts = 0., 5.0, 0.001
+    Ti, Tf, Ts = 0., 10.0, 0.001
     run(Ti, Tf, Ts)
 
 
