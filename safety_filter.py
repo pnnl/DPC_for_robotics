@@ -493,6 +493,20 @@ def run_nav(Ti, Tf, Ts):
     u_histories = [ptu.to_numpy(outputs[i]['U'].squeeze()) for i in range(npoints)]
     r_histories = [np.vstack([R(1)]*(nsteps+1))]*npoints
 
+    np.savez(
+        file = f"data/adv_nav/dpc_sf_adv_nav.npz",
+        x_history0 = ptu.to_numpy(outputs[0]['X'].squeeze()),
+        u_history0 = ptu.to_numpy(outputs[0]['U'].squeeze()),
+        x_history1 = ptu.to_numpy(outputs[1]['X'].squeeze()),
+        u_history1 = ptu.to_numpy(outputs[1]['U'].squeeze()),
+        x_history2 = ptu.to_numpy(outputs[2]['X'].squeeze()),
+        u_history2 = ptu.to_numpy(outputs[2]['U'].squeeze()),
+        x_history3 = ptu.to_numpy(outputs[3]['X'].squeeze()),
+        u_history3 = ptu.to_numpy(outputs[3]['U'].squeeze()),
+        x_history4 = ptu.to_numpy(outputs[4]['X'].squeeze()),
+        u_history4 = ptu.to_numpy(outputs[4]['U'].squeeze()),
+    )
+
     plot_mujoco_trajectories_wp_p2p(outputs, 'data/paper/dpc_adv_nav.svg')
 
     average_cost = np.mean([calculate_mpc_cost(x_history, u_history, r_history) for (x_history, u_history, r_history) in zip(x_histories, u_histories, r_histories)])
@@ -606,7 +620,7 @@ def run_traj(Ti, Tf, Ts):
     r_history = np.stack(ptu.to_numpy(output['R'].squeeze()))
 
     np.savez(
-        file = f"data/paper/dpc_traj.npz",
+        file = f"data/paper/dpc_sf_traj.npz",
         x_history = x_history,
         u_history = u_history,
         r_history = r_history
@@ -617,10 +631,10 @@ def run_traj(Ti, Tf, Ts):
     u_histories = [ptu.to_numpy(output['U'].squeeze())]
     r_histories = [ptu.to_numpy(output['R'].squeeze())]
 
-    plot_mujoco_trajectories_wp_traj([output], 'data/paper/dpc_traj.svg')
+    plot_mujoco_trajectories_wp_traj([output], 'data/paper/dpc_sf_traj.svg')
     plot_mujoco_trajectories_wp_traj([output], 'data/paper/dpc_traj.eps')
 
-    offset = 0.7 # seconds
+    offset = 0.5 # seconds
     offset_idx = int(offset*1/Ts)
     start = np.vstack([r_histories[0][0,:]]*offset_idx)
     r_histories = [np.vstack([start, r_histories[0][:-offset_idx]])]
@@ -666,7 +680,7 @@ if __name__ == "__main__":
 
 
     Ti, Tf, Ts = 0., 20.0, 0.001
-    run_traj(Ti, Tf, Ts)
+    # run_traj(Ti, Tf, Ts)
 
 
     Ti, Tf, Ts = 0., 10.0, 0.001

@@ -494,13 +494,13 @@ def run_wp_traj_mj(
     r_histories = [ptu.to_numpy(outputs[0]['R'].squeeze())]
 
     np.savez(
-        file = f"data/xu_mpc_wp_traj_mj_{str(Ts)}.npz",
+        file = f"data/mpc_wp_traj{str(N)}.npz",
         x_history0 = ptu.to_numpy(outputs[0]['X'].squeeze()),
         u_history0 = ptu.to_numpy(outputs[0]['U'].squeeze()),
         r_history0 = ptu.to_numpy(outputs[0]['R'].squeeze()),
     )
 
-    plot_mujoco_trajectories_wp_traj(outputs, 'data/paper/mpc_traj.svg')
+    plot_mujoco_trajectories_wp_traj(outputs, f'data/paper/mpc_traj_{N}.svg')
 
     average_cost = np.mean([calculate_mpc_cost(x_history, u_history, r_history) for (x_history, u_history, r_history) in zip(x_histories, u_histories, r_histories)])
 
@@ -638,8 +638,8 @@ if __name__ == "__main__":
     # animate_nav(data['x_history2'])
 
     # run_wp_p2p_mj(Ti,Tf,Ts,N,Tf_hzn,obstacle_opts)
-    # run_wp_traj_mj(Ti,20,Ts,N,0.5)
-    run_wp_p2p_mj_many(Ti,Tf,Ts,N,Tf_hzn,obstacle_opts)
+    run_wp_traj_mj(Ti,20,Ts,N,0.5)
+    # run_wp_p2p_mj_many(Ti,Tf,Ts,N,Tf_hzn,obstacle_opts)
     # run_wp_p2p_mj_many(Ti,Tf,0.01,N,Tf_hzn,obstacle_opts)
     # run_adv_nav_mj_many(Ti,Tf,0.01,N,Tf_hzn,obstacle_opts)
 

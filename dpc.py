@@ -1223,6 +1223,25 @@ def run_wp_p2p_mj(
     u_histories = [ptu.to_numpy(outputs[i]['U'].squeeze()) for i in range(npoints)]
     r_histories = [np.vstack([R(1)]*(nstep+1))]*npoints
 
+    np.savez(
+        file = f"data/nav/dpc_nav.npz",
+        x_history0 = ptu.to_numpy(outputs[0]['X'].squeeze()),
+        u_history0 = ptu.to_numpy(outputs[0]['U'].squeeze()),
+        x_history1 = ptu.to_numpy(outputs[1]['X'].squeeze()),
+        u_history1 = ptu.to_numpy(outputs[1]['U'].squeeze()),
+        x_history2 = ptu.to_numpy(outputs[2]['X'].squeeze()),
+        u_history2 = ptu.to_numpy(outputs[2]['U'].squeeze()),
+        x_history3 = ptu.to_numpy(outputs[3]['X'].squeeze()),
+        u_history3 = ptu.to_numpy(outputs[3]['U'].squeeze()),
+        x_history4 = ptu.to_numpy(outputs[4]['X'].squeeze()),
+        u_history4 = ptu.to_numpy(outputs[4]['U'].squeeze()),
+    )
+
+    print("Average Time: {:.2f} seconds".format(average_time))
+    x_histories = [ptu.to_numpy(outputs[i]['X'].squeeze()) for i in range(npoints)]
+    u_histories = [ptu.to_numpy(outputs[i]['U'].squeeze()) for i in range(npoints)]
+    r_histories = [np.vstack([R(1)]*(nstep+1))]*npoints
+
     plot_mujoco_trajectories_wp_p2p(outputs, 'data/paper/dpc_nav.svg')
 
     average_cost = np.mean([calculate_mpc_cost(x_history, u_history, r_history) for (x_history, u_history, r_history) in zip(x_histories, u_histories, r_histories)])
@@ -1314,13 +1333,12 @@ def run_wp_traj_mj(
     u_history = np.stack(ptu.to_numpy(output['U'].squeeze()))
     r_history = np.stack(ptu.to_numpy(output['R'].squeeze()))
 
-    if save is True:
-        np.savez(
-            file = f"data/paper/dpc_traj.npz",
-            x_history = x_history,
-            u_history = u_history,
-            r_history = r_history
-        )
+    np.savez(
+        file = f"data/traj/dpc_traj.npz",
+        x_history = x_history,
+        u_history = u_history,
+        r_history = r_history
+    )
 
     print("Average Time: {:.2f} seconds".format(total_time))
     x_histories = [ptu.to_numpy(output['X'].squeeze()[1:,:])]
@@ -1691,7 +1709,7 @@ if __name__ == "__main__":
     # train_lyap_nav(iterations=2, epochs=10, batch_size=5000, minibatch_size=10, nstep=100, lr=0.05, Ts=0.1, save=True)
     # run_adv_nav_mj(0, 10.0, 0.001)
     # run_wp_p2p_hl(0, 5, 0.001)
-    # run_wp_p2p_mj(0, 5.0, 0.001)
+    run_wp_p2p_mj(0, 5.0, 0.001)
     # run_wp_traj_mj(0, 20.0, 0.001, save=True)
     # run_fig8_mj(0.0, 10.0, 0.001)
 
