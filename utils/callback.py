@@ -170,7 +170,7 @@ def plot_p2p_traj(output, trajectories, save_path):
         ax.plot(x[i, :], y[i, :], z[i, :], color=cmap(i), label=f'Line {i+1}')  # plot x-y-z line
         ax.plot(xr[i, :], yr[i, :], zr[i, :], color=cmap(i), linestyle='dashed')  # plot xr-yr-zr line with dashed style
     
-    ax.set_title('3D Line pairs plotted with rainbow cmap')
+    # ax.set_title('3D Line pairs plotted with rainbow cmap')
     ax.set_xlabel('X-axis')
     ax.set_ylabel('Y-axis')
     ax.set_zlabel('Z-axis')
@@ -190,13 +190,13 @@ def plot_p2p_traj(output, trajectories, save_path):
 
     # Setting up the second subplot (Empty for now)
     ax2 = fig.add_subplot(122, projection='3d')  # 122: 1x2 grid, second subplot
-    ax2.set_title('Second Subplot')
+    # ax2.set_title('Second Subplot')
 
     for i in range(1):
         ax2.plot(x[i, :], y[i, :], z[i, :], color='blue', label=f'Line {i+1}')  # plot x-y-z line
         ax2.plot(xr[i, :], yr[i, :], zr[i, :], color='green', linestyle='dashed')  # plot xr-yr-zr line with dashed style
     
-    ax2.set_title('3D Line pairs plotted with rainbow cmap')
+    # ax2.set_title('3D Line pairs plotted with rainbow cmap')
     ax2.set_xlabel('X-axis')
     ax2.set_ylabel('Y-axis')
     ax2.set_zlabel('Z-axis')
