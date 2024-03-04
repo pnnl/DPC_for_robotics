@@ -1,8 +1,10 @@
 import matplotlib.pyplot as plt
 import numpy as np
-from utils.quad import plot_mujoco_trajectories_wp_traj, plot_mujoco_trajectories_wp_p2p, draw_cylinder
 import os
 import utils.pytorch as ptu
+from utils.quad import Animator
+
+###### Paper #######
 
 # nav task
 def load_nav(file, flip_z=True):
@@ -22,11 +24,6 @@ nmpc_nav = load_nav('data/nav/nmpc_nav.npz', flip_z=True)
 vtnmpc_nav = load_nav('data/nav/vtnmpc_nav.npz', flip_z=False)
 dpc_nav = load_nav('data/nav/dpc_nav.npz', flip_z=False)
 dpc_sf_nav = load_nav('data/nav/dpc_sf_nav.npz', flip_z=False)
-
-# plot_mujoco_trajectories_wp_p2p(nmpc_nav, 'data/nav/nmpc_nav.svg')
-# plot_mujoco_trajectories_wp_p2p(vtnmpc_nav, 'data/nav/vtnmpc_nav.svg')
-# plot_mujoco_trajectories_wp_p2p(dpc_nav, 'data/nav/dpc_nav.svg')
-# plot_mujoco_trajectories_wp_p2p(dpc_sf_nav, 'data/nav/dpc_sf_nav.svg')
 
 def plot_2d_trajectories(dpc, dpc_sf, vtnmpc, nmpc, filename):
     fig, axs = plt.subplots(2, 2, figsize=(10, 10))
@@ -76,11 +73,6 @@ nmpc_adv_nav = load_nav('data/adv_nav/nmpc_adv_nav.npz', flip_z=True)
 vtnmpc_adv_nav = load_nav('data/adv_nav/vtnmpc_adv_nav.npz', flip_z=True)
 dpc_adv_nav = load_nav('data/adv_nav/dpc_adv_nav.npz', flip_z=False)
 dpc_sf_adv_nav = load_nav('data/adv_nav/dpc_sf_adv_nav.npz', flip_z=False)
-
-# plot_mujoco_trajectories_wp_p2p(nmpc_adv_nav, 'data/adv_nav/nmpc_adv_nav.svg')
-# plot_mujoco_trajectories_wp_p2p(vtnmpc_adv_nav, 'data/adv_nav/vtnmpc_adv_nav.svg')
-# plot_mujoco_trajectories_wp_p2p(dpc_adv_nav, 'data/adv_nav/dpc_adv_nav.svg')
-# plot_mujoco_trajectories_wp_p2p(dpc_sf_adv_nav, 'data/adv_nav/dpc_sf_adv_nav.svg')
 
 plot_2d_trajectories(dpc_adv_nav, dpc_sf_adv_nav, vtnmpc_adv_nav, nmpc_adv_nav, 'data/adv_nav/adv_nav.svg')
 
@@ -133,11 +125,167 @@ def plot_3d_trajectories(dpc, dpc_sf, vtnmpc, nmpc, filename):
 
     print('Plot saved to', filename)
 
-# plot_mujoco_trajectories_wp_traj([nmpc_traj], 'data/traj/nmpc_traj.svg')
-# plot_mujoco_trajectories_wp_traj([vtnmpc_traj], 'data/traj/vtnmpc_traj.svg')
-# plot_mujoco_trajectories_wp_traj([dpc_sf_traj], 'data/traj/dpc_sf_traj.svg')
-# plot_mujoco_trajectories_wp_traj([dpc_traj], 'data/traj/dpc_traj.svg')
-
 plot_3d_trajectories(dpc_traj, dpc_sf_traj, vtnmpc_traj, nmpc_traj, 'data/traj/traj.svg')
+
+###### Video ######
+
+# nav task
+animator = Animator(
+    states=             ptu.to_numpy(dpc_nav[2]['X'][0]),
+    times=              np.arange(0,5,0.001),
+    reference_history=  ptu.to_numpy(dpc_nav[2]['X'][0]),
+    drawCylinder=True,
+    elev=50,
+    azim=-90,
+    save_path='data/nav',
+    save_name='dpc_nav',
+    title='DPC Navigation'
+)
+animator.animate()
+
+animator = Animator(
+    states=             ptu.to_numpy(dpc_sf_nav[2]['X'][0]),
+    times=              np.arange(0,5,0.001),
+    reference_history=  ptu.to_numpy(dpc_sf_nav[2]['X'][0]),
+    drawCylinder=True,
+    elev=50,
+    azim=-90,
+    save_path='data/nav',
+    save_name='dpc_sf_nav',
+    title='DPC + PSF Navigation'
+)
+animator.animate()
+
+animator = Animator(
+    states=             ptu.to_numpy(vtnmpc_nav[2]['X'][0][1:]),
+    times=              np.arange(0,5,0.001),
+    reference_history=  ptu.to_numpy(vtnmpc_nav[2]['X'][0][1:]),
+    drawCylinder=True,
+    elev=50,
+    azim=-90,
+    save_path='data/nav',
+    save_name='vtnmpc_nav',
+    title='VTNMPC Navigation'
+)
+animator.animate()
+
+animator = Animator(
+    states=             ptu.to_numpy(nmpc_nav[2]['X'][0][1:]),
+    times=              np.arange(0,5,0.001),
+    reference_history=  ptu.to_numpy(nmpc_nav[2]['X'][0][1:]),
+    drawCylinder=True,
+    elev=50,
+    azim=-90,
+    save_path='data/nav',
+    save_name='nmpc_nav',
+    title='NMPC Navigation'
+)
+animator.animate()
+
+# adv nav task
+animator = Animator(
+    states=             ptu.to_numpy(dpc_adv_nav[2]['X'][0]),
+    times=              np.arange(0,10,0.001),
+    reference_history=  ptu.to_numpy(dpc_adv_nav[2]['X'][0]),
+    drawCylinder=True,
+    elev=50,
+    azim=-90,
+    save_path='data/adv_nav',
+    save_name='dpc_adv_nav',
+    title='DPC Adversarial Navigation'
+)
+animator.animate()
+
+animator = Animator(
+    states=             ptu.to_numpy(dpc_sf_adv_nav[2]['X'][0]),
+    times=              np.arange(0,10,0.001),
+    reference_history=  ptu.to_numpy(dpc_sf_adv_nav[2]['X'][0]),
+    drawCylinder=True,
+    elev=50,
+    azim=-90,
+    save_path='data/adv_nav',
+    save_name='dpc_sf_adv_nav',
+    title='DPC + PSF Adversarial Navigation'
+)
+animator.animate()
+
+animator = Animator(
+    states=             ptu.to_numpy(vtnmpc_adv_nav[2]['X'][0][1:]),
+    times=              np.arange(0,10,0.001),
+    reference_history=  ptu.to_numpy(vtnmpc_adv_nav[2]['X'][0][1:]),
+    drawCylinder=True,
+    elev=50,
+    azim=-90,
+    save_path='data/adv_nav',
+    save_name='vtnmpc_adv_nav',
+    title='VTNMPC Adversarial Navigation'
+)
+animator.animate()
+
+animator = Animator(
+    states=             ptu.to_numpy(nmpc_adv_nav[2]['X'][0][1:]),
+    times=              np.arange(0,10,0.001),
+    reference_history=  ptu.to_numpy(nmpc_adv_nav[2]['X'][0][1:]),
+    drawCylinder=True,
+    elev=50,
+    azim=-90,
+    save_path='data/adv_nav',
+    save_name='nmpc_adv_nav',
+    title='NMPC Adversarial Navigation'
+)
+animator.animate()
+
+# traj task
+animator = Animator(
+    states=             ptu.to_numpy(dpc_traj['X'][0][1:]),
+    times=              np.arange(0,20,0.001),
+    reference_history=  ptu.to_numpy(dpc_traj['R'][0][1:]),
+    drawCylinder=False,
+    elev=None,
+    azim=None,
+    save_path='data/traj',
+    save_name='dpc_traj',
+    title='DPC Trajectory Tracking'
+)
+animator.animate()
+
+animator = Animator(
+    states=             ptu.to_numpy(dpc_sf_traj['X'][0][1:]),
+    times=              np.arange(0,20,0.001),
+    reference_history=  ptu.to_numpy(dpc_sf_traj['R'][0][1:]),
+    drawCylinder=False,
+    elev=None,
+    azim=None,
+    save_path='data/traj',
+    save_name='dpc_sf_traj',
+    title='DPC + PSF Trajectory Tracking'
+)
+animator.animate()
+
+animator = Animator(
+    states=             ptu.to_numpy(vtnmpc_traj['X'][0][1:]),
+    times=              np.arange(0,20,0.001),
+    reference_history=  ptu.to_numpy(vtnmpc_traj['R'][0][1:]),
+    drawCylinder=False,
+    elev=None,
+    azim=None,
+    save_path='data/traj',
+    save_name='vtnmpc_traj',
+    title='VTNMPC Trajectory Tracking'
+)
+animator.animate()
+
+animator = Animator(
+    states=             ptu.to_numpy(nmpc_traj['X'][0][1:]),
+    times=              np.arange(0,20,0.001),
+    reference_history=  ptu.to_numpy(nmpc_traj['R'][0][1:]),
+    drawCylinder=False,
+    elev=None,
+    azim=None,
+    save_path='data/traj',
+    save_name='nmpc_traj',
+    title='NMPC Trajectory Tracking'
+)
+animator.animate()
 
 print('fin')

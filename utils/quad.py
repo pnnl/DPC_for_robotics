@@ -255,6 +255,10 @@ class Animator:
             state_prediction=None,
             save_path='data/media',
             perspective='normal', # 'normal', 'topdown'
+            elev = None,
+            azim = None,
+            save_name= None,
+            title='Trajectory',
         ) -> None:
 
         num_steps = len(times)
@@ -266,6 +270,8 @@ class Animator:
                 render_interval *= 2
             return render_interval
         render_interval = compute_render_interval(num_steps, max_frames)
+
+        self.save_name = save_name
         
         self.cylinder = None
         self.sphere = None
@@ -306,6 +312,12 @@ class Animator:
 
         self.fig = plt.figure()
         self.ax = self.fig.add_subplot(projection='3d')
+
+        if azim is not None or elev is not None:
+
+            # Set the view angle
+            self.ax.view_init(elev=elev, azim=azim)
+
 
         if perspective == 'topdown':
             self.ax.view_init(elev=90, azim=270)
@@ -367,7 +379,7 @@ class Animator:
             # draw the reference waypoints
             self.ax.scatter(x_wp, y_wp, z_wp, color='green', alpha=1, marker = 'o', s = 25)
 
-        title = self.ax.text2D(0.95, 0.95, 'Trajectory', transform=self.ax.transAxes, horizontalalignment='right')
+        title = self.ax.text2D(0.95, 0.95, title, transform=self.ax.transAxes, horizontalalignment='right')
 
 #     def draw_cylinder(self, x_center=0, y_center=0, z_center=0, radius=1, depth=1, resolution=100):
 #         z = np.linspace(z_center - depth, z_center + depth, resolution)
@@ -473,7 +485,7 @@ class Animator:
         self.line2.set_3d_properties(motorPoints[2,3:6])
         self.line3.set_data(x_from0, y_from0)
         self.line3.set_3d_properties(z_from0)
-        self.titleTime.set_text(u"Time = {:.2f} s".format(time))
+        self.titleTime.set_text(u"Time = {:.2f} s ".format(time))
 
         return self.line1, self.line2
     
@@ -499,15 +511,19 @@ class Animator:
             blit=False)
 
         if (self.ifsave):
-            current_datetime = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-            print(f"save path: {os.path.abspath(self.save_path)}")
-            if not os.path.exists(self.save_path):
-                os.makedirs(self.save_path)
-            line_ani.save(f'{self.save_path}/{current_datetime}.gif', dpi=120, fps=25)
-            # Update the figure with the last frame of animation
-            self.update_lines(len(self.times[1:])-1)
-            # Save the final frame as an SVG for good paper plots
-            self.fig.savefig(f'{self.save_path}/{current_datetime}_final_frame.svg', format='svg')
+            if self.save_name is None:
+                current_datetime = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+                print(f"save path: {os.path.abspath(self.save_path)}")
+                if not os.path.exists(self.save_path):
+                    os.makedirs(self.save_path)
+                line_ani.save(f'{self.save_path}/{current_datetime}.gif', dpi=120, fps=25)
+                # Update the figure with the last frame of animation
+                self.update_lines(len(self.times[1:])-1)
+                # Save the final frame as an SVG for good paper plots
+                self.fig.savefig(f'{self.save_path}/{current_datetime}_final_frame.svg', format='svg')
+            else:
+                line_ani.save(f'{self.save_path}/{self.save_name}.gif', dpi=120, fps=25)
+
 
         # plt.close(self.fig)            
         # plt.show()
