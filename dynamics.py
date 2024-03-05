@@ -6,6 +6,8 @@ import utils.pytorch as ptu
 import utils.quad
 import utils.mujoco
 import mujoco as mj
+import mujoco_viewer
+import matplotlib.pyplot as plt
 
 from typing import Dict
 
@@ -1116,10 +1118,22 @@ class mujoco_quad:
 
         # Make renderer, render and show the pixels
         if render == 'mujoco':
-            self.renderer = mj.Renderer(model=self.model, height=720, width=1280)
-            # self.data.cam_xpos = np.array([[1,2,3]])
-            self.model.cam_pos0 = np.array([[1,2,3]])
-            self.model.cam_pos = np.array([[1,2,3]])
+
+            self.frames = []
+
+            self.duration = 5.0  # (seconds)
+            self.framerate = 60  # (Hz)
+
+            self.viewer = mujoco_viewer.MujocoViewer(self.model, self.data, 'offscreen')
+            self.viewer.cam.distance = 10
+            self.viewer.cam.azimuth = 135
+            self.viewer.cam.elevation = -30
+
+            self.images = []
+            # self.viewer.cam.elevation = 50
+            # mj.mj_forward(model, data)
+            # img = viewer.read_pixels(camid=2)
+            print('fin')
 
         mj.mj_resetData(self.model, self.data)  # Reset state and time.
         self.data.ctrl = [self.quad_params["kTh"] * self.quad_params["w_hover"] ** 2] * 4 # kTh * w_hover ** 2 = 2.943
@@ -1156,6 +1170,10 @@ class mujoco_quad:
 
         self.state = self.get_state()
 
+        if self.render == 'mujoco':
+            # self.viewer.render()
+            self.images.append(self.viewer.read_pixels(camid=-1))
+
         return self.state
 
     def get_state(self):
@@ -1171,9 +1189,16 @@ class mujoco_quad:
         self.data.qpos = qpos
         self.data.qvel = qvel
 
+        mj.mj_step(self.model, self.data)
+
+
         # handle the rotors (omegas) and state save separately
         self.omegas = copy.deepcopy(state.squeeze()[13:17])
         self.state = copy.deepcopy(state)
+
+        if self.render == 'mujoco':
+            # self.viewer.render()
+            self.images.append(self.viewer.read_pixels(camid=-1))
 
     def reset(self, state):
 
@@ -1222,7 +1247,7 @@ if __name__ == "__main__":
         input = np.array([0.0001,0.0,0.0,0.0])
         Ti, Tf, Ts = 0.0, 3.0, 0.1
 
-        mj_quad = mujoco_quad(state=state, quad_params=quad_params, Ti=Ti, Tf=Tf, Ts=Ts, integrator='euler')
+        mj_quad = mujoco_quad(state=state, quad_params=quad_params, Ti=Ti, Tf=Tf, Ts=Ts, integrator='euler', render='mujoco')
 
         memory = {'state': [state], 'input': [input]}
         times = np.arange(Ti, Tf, Ts)
@@ -1238,6 +1263,13 @@ if __name__ == "__main__":
 
         # needs to be followed by a reset if we are to repeat the simulation
         mj_quad.reset(quad_params["default_init_state_np"])
+
+        video = np.stack(mj_quad.images)
+
+        # We take the maximum value across the 0th axis (across all frames)
+        timelapse_image = np.max(video, axis=0)
+
+        plt.imsave('test.png', timelapse_image)
 
         animator = Animator(memory['state'], times, memory['state'], max_frames=10, save_path='data')
         animator.animate()

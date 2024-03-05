@@ -3,6 +3,7 @@ import numpy as np
 import os
 import utils.pytorch as ptu
 from utils.quad import Animator
+from dynamics import mujoco_quad, get_quad_params
 
 ###### Paper #######
 
@@ -126,6 +127,26 @@ def plot_3d_trajectories(dpc, dpc_sf, vtnmpc, nmpc, filename):
     print('Plot saved to', filename)
 
 plot_3d_trajectories(dpc_traj, dpc_sf_traj, vtnmpc_traj, nmpc_traj, 'data/traj/traj.svg')
+
+def plot_mujoco_trajectories(traj, filename):
+    quad_params = get_quad_params()
+    state = quad_params["default_init_state_np"]
+    Ti, Tf, Ts = 0.0, 20.0, 0.001
+    mj_quad = mujoco_quad(state=state, quad_params=quad_params, Ti=Ti, Tf=Tf, Ts=Ts, integrator='euler', render='mujoco')
+    mj_quad.images = []
+    traj = ptu.to_numpy(traj['X'][0])
+    for i, x in enumerate(traj):
+        if i % 400 == 0:
+            mj_quad.set_state(x)
+    video = np.stack(mj_quad.images)
+    # We take the maximum value across the 0th axis (across all frames)
+    timelapse_image = np.max(video, axis=0)
+    plt.imsave(filename, timelapse_image)
+
+plot_mujoco_trajectories(dpc_traj, 'data/traj/dpc_traj_mujoco.png')
+plot_mujoco_trajectories(dpc_sf_traj, 'data/traj/dpc_sf_traj_mujoco.png')
+plot_mujoco_trajectories(vtnmpc_traj, 'data/traj/vtnmpc_traj_mujoco.png')
+plot_mujoco_trajectories(nmpc_traj, 'data/traj/nmpc_traj_mujoco.png')
 
 ###### Video ######
 
