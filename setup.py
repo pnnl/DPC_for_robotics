@@ -23,6 +23,8 @@ setup(name='dpc_for_robotics',
         'osqp',         # for testing purposes on convex hull operations - can probably be removed later.
         'scikit-build', # for l4casadi
         'mujoco-python-viewer',
+        'imageio',
+        'imageio-ffmpeg'
         # 'l4casadi --no-build-isolation', # run with this flag separately
     ],
     packages=find_packages(
