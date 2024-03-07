@@ -16,7 +16,7 @@ import reference
 from utils.quad import Animator
 from utils.rotation import quaternion_derivative, quaternion_error, euler_to_quaternion
 from dynamics import mujoco_quad, get_quad_params
-from pid import PID, get_ctrl_params
+from proportional import PID, get_ctrl_params
 
 class AttitudeDatasetGenerator:
     def __init__(

@@ -18,7 +18,7 @@ from dynamics import state_dot
 
 
 from dynamics import mujoco_quad, get_quad_params
-from pid import PID, get_ctrl_params
+from proportional import PID, get_ctrl_params
 
 class DatasetGenerator:
     def __init__(

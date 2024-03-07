@@ -13,7 +13,7 @@ import utils.pytorch as ptu
 from dpc import posVel2cyl
 from utils.integrate import euler, RK4, generate_variable_timesteps, generate_variable_times
 from dynamics import get_quad_params, mujoco_quad, state_dot
-from pid import get_ctrl_params, PID
+from proportional import get_ctrl_params, PID
 import reference
 from utils.quad import Animator
 from utils.quad import Animator, plot_mujoco_trajectories_wp_p2p, calculate_mpc_cost, plot_mujoco_trajectories_wp_traj

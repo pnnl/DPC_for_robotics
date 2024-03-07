@@ -15,7 +15,7 @@ from utils.quad import plot_mujoco_trajectories_wp_p2p, \
 from safe_set import NavSafeSet, TrajSafeSet
 from utils.geometry import find_closest_simplex_equation
 import utils.pytorch as ptu
-from pid import get_ctrl_params, PID
+from proportional import get_ctrl_params, PID
 import reference
 
 # Define a function to adjust the layer names
