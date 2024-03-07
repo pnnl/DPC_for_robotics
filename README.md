@@ -7,7 +7,7 @@ $$x=y$$
 
 $$\dot{x} = U(\cos\theta \cos\psi) + V(\sin\phi \cos\psi \sin\theta - \cos\phi \sin\psi) + W(\cos\phi \sin\theta \cos\psi + \sin\phi \sin\psi)$$
 
-$$
+``` math
 \dot{x} = U(\cos\theta \cos\psi) + V(\sin\phi \cos\psi \sin\theta - \cos\phi \sin\psi) + W(\cos\phi \sin\theta \cos\psi + \sin\phi \sin\psi) \\
 \dot{y} = U(\cos\theta \sin\psi) + V(\sin\phi \sin\psi \sin\theta + \cos\phi \cos\psi) + W(\cos\phi \sin\theta \sin\psi - \sin\phi \cos\psi) \\
 \dot{z} = U \sin\theta - V(\sin\phi \cos\theta) - W(\cos\phi \cos\theta) \\
@@ -20,7 +20,7 @@ $$
 \dot{P} = \frac{J_z L_{\text{tot}} + J_{xz} N_{\text{tot}} - (J_z(J_z-J_y)+J_{xz}^2)QR + J_{xz}(J_x-J_y+J_z)PQ + J_{xz}QH_{\text{eng}}}{J_x J_z - J_{xz}^2} \\
 \dot{Q} = \frac{M_{\text{tot}} + (J_z-J_x)PR - J_{xz}(P^2-R^2) - RH_{\text{eng}}}{J_y} \\
 \dot{R} = \frac{J_x N_{\text{tot}} + J_{xz} L_{\text{tot}} + (J_x(J_x-J_y)+J_{xz}^2)PQ - J_{xz}(J_x-J_y+J_z)QR + J_x QH_{\text{eng}}}{J_x J_z - J_{xz}^2} \\
-$$
+```
 
 
 ### for mujoco viewer:
