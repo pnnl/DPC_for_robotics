@@ -5,6 +5,8 @@ test maths
 
 $$x=y$$
 
+$$\dot{x} = U(\cos\theta \cos\psi) + V(\sin\phi \cos\psi \sin\theta - \cos\phi \sin\psi) + W(\cos\phi \sin\theta \cos\psi + \sin\phi \sin\psi)$$
+
 $$
 \dot{x} = U(\cos\theta \cos\psi) + V(\sin\phi \cos\psi \sin\theta - \cos\phi \sin\psi) + W(\cos\phi \sin\theta \cos\psi + \sin\phi \sin\psi) \\
 \dot{y} = U(\cos\theta \sin\psi) + V(\sin\phi \sin\psi \sin\theta + \cos\phi \cos\psi) + W(\cos\phi \sin\theta \sin\psi - \sin\phi \cos\psi) \\
