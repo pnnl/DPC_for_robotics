@@ -1,9 +1,16 @@
 
-test maths inline: $x=y$
+# Summary
 
-test maths
+# Installation
 
-$$x=y$$
+- [pip install -e .]
+- [pip install pytorch cpu]
+- [pip install l4casadi --no_build_dependencies or something like that]
+- [Install mujoco binary on system as directed by mujoco_py]
+- [Install mujoco_py itself]
+- [for mujoco viewer: conda install -c conda-forge libstdcxx-ng]
+
+# Equations of Motion
 
 ``` math
 \begin{align}
@@ -22,7 +29,9 @@ $$x=y$$
 \end{align}
 ```
 
+[insert table of notation here]
+
 
 ### for mujoco viewer:
 
-conda install -c conda-forge libstdcxx-ng
+
