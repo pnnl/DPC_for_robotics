@@ -24,8 +24,9 @@ setup(name='dpc_for_robotics',
         'scikit-build', # for l4casadi
         'mujoco-python-viewer',
         'imageio',
-        'imageio-ffmpeg'
+        'imageio-ffmpeg',
         # 'l4casadi --no-build-isolation', # run with this flag separately
+        'gymnasium',    # for RL
     ],
     packages=find_packages(
         include=[

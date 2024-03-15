@@ -8,6 +8,7 @@ import utils.mujoco
 import mujoco as mj
 import mujoco_viewer
 import matplotlib.pyplot as plt
+import imageio
 
 from typing import Dict
 
@@ -1211,6 +1212,8 @@ class mujoco_quad:
         self.t = self.Ti
     
 
+
+
 if __name__ == "__main__":
 
     # an example simulation and animation 
@@ -1245,14 +1248,14 @@ if __name__ == "__main__":
         quad_params = get_quad_params()
         state = quad_params["default_init_state_np"]
         input = np.array([0.0001,0.0,0.0,0.0])
-        Ti, Tf, Ts = 0.0, 3.0, 0.1
+        Ti, Tf, Ts = 0.0, 3.0, 0.01
 
         mj_quad = mujoco_quad(state=state, quad_params=quad_params, Ti=Ti, Tf=Tf, Ts=Ts, integrator='euler', render='mujoco')
 
         memory = {'state': [state], 'input': [input]}
         times = np.arange(Ti, Tf, Ts)
         for t in times:
-
+            input = np.random.rand(4)*2-1
             state = mj_quad.step(input)
 
             memory['state'].append(state)
@@ -1265,6 +1268,14 @@ if __name__ == "__main__":
         mj_quad.reset(quad_params["default_init_state_np"])
 
         video = np.stack(mj_quad.images)
+
+        writer = imageio.get_writer('data/test.mp4', fps=60)
+
+        for i, img in enumerate(video):
+            writer.append_data(img)
+
+        # Close the writer to finalize the video file
+        writer.close()
 
         # We take the maximum value across the 0th axis (across all frames)
         timelapse_image = np.max(video, axis=0)

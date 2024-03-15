@@ -6,6 +6,9 @@ from utils.quad import Animator
 from dynamics import mujoco_quad, get_quad_params
 import imageio
 
+
+
+
 ###### Paper #######
 
 # nav task
@@ -179,10 +182,10 @@ def plot_mujoco_trajectories_video(traj, filename):
     # Close the writer to finalize the video file
     writer.close()
 
-plot_mujoco_trajectories_video(dpc_traj, 'data/traj/dpc_traj_mujoco.mp4')
-plot_mujoco_trajectories_video(dpc_sf_traj, 'data/traj/dpc_sf_traj_mujoco.mp4')
-plot_mujoco_trajectories_video(vtnmpc_traj, 'data/traj/vtnmpc_traj_mujoco.mp4')
-plot_mujoco_trajectories_video(nmpc_traj, 'data/traj/nmpc_traj_mujoco.mp4')
+# plot_mujoco_trajectories_video(dpc_traj, 'data/traj/dpc_traj_mujoco.mp4')
+# plot_mujoco_trajectories_video(dpc_sf_traj, 'data/traj/dpc_sf_traj_mujoco.mp4')
+# plot_mujoco_trajectories_video(vtnmpc_traj, 'data/traj/vtnmpc_traj_mujoco.mp4')
+# plot_mujoco_trajectories_video(nmpc_traj, 'data/traj/nmpc_traj_mujoco.mp4')
 
 ###### Video ######
 
@@ -198,7 +201,7 @@ animator = Animator(
     save_name='dpc_nav',
     title='DPC Navigation'
 )
-animator.animate()
+# animator.animate()
 
 animator = Animator(
     states=             ptu.to_numpy(dpc_sf_nav[2]['X'][0]),
@@ -211,7 +214,7 @@ animator = Animator(
     save_name='dpc_sf_nav',
     title='DPC + PSF Navigation'
 )
-animator.animate()
+# animator.animate()
 
 animator = Animator(
     states=             ptu.to_numpy(vtnmpc_nav[2]['X'][0][1:]),
@@ -224,7 +227,7 @@ animator = Animator(
     save_name='vtnmpc_nav',
     title='VTNMPC Navigation'
 )
-animator.animate()
+# animator.animate()
 
 animator = Animator(
     states=             ptu.to_numpy(nmpc_nav[2]['X'][0][1:]),
@@ -237,7 +240,7 @@ animator = Animator(
     save_name='nmpc_nav',
     title='NMPC Navigation'
 )
-animator.animate()
+# animator.animate()
 
 # adv nav task
 animator = Animator(
@@ -251,7 +254,21 @@ animator = Animator(
     save_name='dpc_adv_nav',
     title='DPC Adversarial Navigation'
 )
+# animator.animate()
+
+animator = Animator(
+    states=             ptu.to_numpy(dpc_adv_nav[2]['X'][0]),
+    times=              np.arange(0,10,0.001),
+    reference_history=  ptu.to_numpy(dpc_adv_nav[2]['X'][0]),
+    drawCylinder=True,
+    elev=90,
+    azim=-90,
+    save_path='data/adv_nav',
+    save_name='dpc_adv_nav_top_down',
+    title='DPC'
+)
 animator.animate()
+
 
 animator = Animator(
     states=             ptu.to_numpy(dpc_sf_adv_nav[2]['X'][0]),
@@ -263,6 +280,19 @@ animator = Animator(
     save_path='data/adv_nav',
     save_name='dpc_sf_adv_nav',
     title='DPC + PSF Adversarial Navigation'
+)
+# animator.animate()
+
+animator = Animator(
+    states=             ptu.to_numpy(dpc_sf_adv_nav[2]['X'][0]),
+    times=              np.arange(0,10,0.001),
+    reference_history=  ptu.to_numpy(dpc_sf_adv_nav[2]['X'][0]),
+    drawCylinder=True,
+    elev=90,
+    azim=-90,
+    save_path='data/adv_nav',
+    save_name='dpc_sf_adv_nav_top_down',
+    title='DPC + PSF'
 )
 animator.animate()
 
@@ -277,7 +307,7 @@ animator = Animator(
     save_name='vtnmpc_adv_nav',
     title='VTNMPC Adversarial Navigation'
 )
-animator.animate()
+# animator.animate()
 
 animator = Animator(
     states=             ptu.to_numpy(nmpc_adv_nav[2]['X'][0][1:]),
@@ -290,7 +320,7 @@ animator = Animator(
     save_name='nmpc_adv_nav',
     title='NMPC Adversarial Navigation'
 )
-animator.animate()
+# animator.animate()
 
 # traj task
 animator = Animator(
@@ -304,7 +334,7 @@ animator = Animator(
     save_name='dpc_traj',
     title='DPC Trajectory Tracking'
 )
-animator.animate()
+# animator.animate()
 
 animator = Animator(
     states=             ptu.to_numpy(dpc_sf_traj['X'][0][1:]),
@@ -317,7 +347,7 @@ animator = Animator(
     save_name='dpc_sf_traj',
     title='DPC + PSF Trajectory Tracking'
 )
-animator.animate()
+# animator.animate()
 
 animator = Animator(
     states=             ptu.to_numpy(vtnmpc_traj['X'][0][1:]),
@@ -330,7 +360,7 @@ animator = Animator(
     save_name='vtnmpc_traj',
     title='VTNMPC Trajectory Tracking'
 )
-animator.animate()
+# animator.animate()
 
 animator = Animator(
     states=             ptu.to_numpy(nmpc_traj['X'][0][1:]),
@@ -343,6 +373,8 @@ animator = Animator(
     save_name='nmpc_traj',
     title='NMPC Trajectory Tracking'
 )
-animator.animate()
+# animator.animate()
+
+
 
 print('fin')
