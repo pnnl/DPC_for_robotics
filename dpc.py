@@ -663,7 +663,7 @@ def train_wp_p2p(    # recommendations:
         torch.save(policy_state_dict, policy_save_path + f"wp_p2p_policy.pth")
 
 @time_function
-def train_wp_traj(    # recommendations:
+def train_traj(    # recommendations:
     iterations,      # 2
     epochs,          # 15
     batch_size,      # 5000
@@ -1707,16 +1707,16 @@ if __name__ == "__main__":
     ptu.init_gpu(use_gpu=False)
 
     train_nav(iterations=2, epochs=10, batch_size=5000, minibatch_size=10, nstep=100, lr=0.05, Ts=0.1, save=True)
-    train_wp_p2p(iterations=2, epochs=10, batch_size=5000, minibatch_size=10, nstep=100, lr=0.05, Ts=0.1, save=False)
-    train_fig8(iterations=1, epochs=5, batch_size=5000, minibatch_size=10, nstep=100, lr=0.05, Ts=0.1, save=False)
-    run_adv_nav_mj(0, 10.0, 0.001)
+    train_traj(iterations=1, epochs=10, batch_size=5000, minibatch_size=10, nstep=100, lr=0.05, Ts=0.1, save=True)
+    train_wp_p2p(iterations=2, epochs=10, batch_size=5000, minibatch_size=10, nstep=100, lr=0.05, Ts=0.1, save=True)
+    # train_fig8(iterations=1, epochs=5, batch_size=5000, minibatch_size=10, nstep=100, lr=0.05, Ts=0.1, save=False)
+    run_adv_nav_mj(0, 10.0, 0.001, save=True)
     # run_wp_p2p_hl(0, 5, 0.001)
-    run_nav_mj(0, 5.0, 0.001)
+    run_nav_mj(0, 5.0, 0.001, save=True)
     run_traj_mj(0, 20.0, 0.001, save=True)
     # run_fig8_mj(0.0, 10.0, 0.001)
 
 
-    train_wp_traj(iterations=1, epochs=10, batch_size=5000, minibatch_size=10, nstep=100, lr=0.05, Ts=0.1, save=True)
 
 
     print('fin')

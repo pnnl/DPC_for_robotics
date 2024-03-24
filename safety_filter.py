@@ -516,7 +516,6 @@ def run_nav(Ti, Tf, Ts):
 
     print('fin')
 
-
 def run_traj(Ti, Tf, Ts):
     
     quad_params = get_quad_params()
@@ -680,7 +679,7 @@ if __name__ == "__main__":
 
 
     Ti, Tf, Ts = 0., 20.0, 0.001
-    # run_traj(Ti, Tf, Ts)
+    run_traj(Ti, Tf, Ts)
 
 
     Ti, Tf, Ts = 0., 10.0, 0.001
