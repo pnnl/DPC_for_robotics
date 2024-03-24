@@ -1123,7 +1123,7 @@ def run_adv_nav_mj(
     # animator.animate()
 
 @time_function
-def run_wp_p2p_mj(
+def run_nav_mj(
         Ti, Tf, Ts,
         integrator = 'euler',
         policy_save_path = 'data/',
@@ -1252,7 +1252,7 @@ def run_wp_p2p_mj(
     # animator.animate()
 
 @time_function
-def run_wp_traj_mj(
+def run_traj_mj(
         Ti, Tf, Ts,
         integrator = 'euler',
         policy_save_path = 'data/',
@@ -1516,7 +1516,7 @@ def run_wp_p2p_hl(
     # animator.animate()
 
 @time_function
-def train_lyap_nav(    # recommendations:
+def train_nav(    # recommendations:
     iterations,      # 2
     epochs,          # 15
     batch_size,      # 5000
@@ -1706,15 +1706,16 @@ if __name__ == "__main__":
     np.random.seed(0)
     ptu.init_gpu(use_gpu=False)
 
-    # train_lyap_nav(iterations=2, epochs=10, batch_size=5000, minibatch_size=10, nstep=100, lr=0.05, Ts=0.1, save=True)
-    # run_adv_nav_mj(0, 10.0, 0.001)
+    train_nav(iterations=2, epochs=10, batch_size=5000, minibatch_size=10, nstep=100, lr=0.05, Ts=0.1, save=True)
+    train_wp_p2p(iterations=2, epochs=10, batch_size=5000, minibatch_size=10, nstep=100, lr=0.05, Ts=0.1, save=False)
+    train_fig8(iterations=1, epochs=5, batch_size=5000, minibatch_size=10, nstep=100, lr=0.05, Ts=0.1, save=False)
+    run_adv_nav_mj(0, 10.0, 0.001)
     # run_wp_p2p_hl(0, 5, 0.001)
-    # run_wp_p2p_mj(0, 5.0, 0.001)
-    # run_wp_traj_mj(0, 20.0, 0.001, save=True)
+    run_nav_mj(0, 5.0, 0.001)
+    run_traj_mj(0, 20.0, 0.001, save=True)
     # run_fig8_mj(0.0, 10.0, 0.001)
 
-    # train_wp_p2p(iterations=2, epochs=10, batch_size=5000, minibatch_size=10, nstep=100, lr=0.05, Ts=0.1, save=False)
-    # train_fig8(iterations=1, epochs=5, batch_size=5000, minibatch_size=10, nstep=100, lr=0.05, Ts=0.1, save=False)
+
     train_wp_traj(iterations=1, epochs=10, batch_size=5000, minibatch_size=10, nstep=100, lr=0.05, Ts=0.1, save=True)
 
 
