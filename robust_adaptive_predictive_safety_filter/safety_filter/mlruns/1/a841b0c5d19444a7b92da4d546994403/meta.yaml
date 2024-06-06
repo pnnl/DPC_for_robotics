@@ -1,0 +1,15 @@
+artifact_uri: mlruns/1/a841b0c5d19444a7b92da4d546994403/artifacts
+end_time: 1705688708476
+entry_point_name: ''
+experiment_id: '1'
+lifecycle_stage: active
+name: ''
+run_id: a841b0c5d19444a7b92da4d546994403
+run_uuid: a841b0c5d19444a7b92da4d546994403
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1705688708181
+status: 3
+tags: []
+user_id: shaw199
